@@ -106,11 +106,14 @@ class RulesParser:
       if line and not self._is_comment_line(line):
         rule = self.parse_line(line)
         if rule:
+          print rule
           rules.append(rule)
     return rules
 
   def parse_line(self, line):
     tokens = line.split()
+    #Make all tokens lowercase so we ignore case sensitivity
+    tokens = map(lambda token: token.lower(), tokens)
 
     #Rules that have 4 fields are normal rules
     if len(tokens) == 4:
@@ -139,6 +142,8 @@ class GeoDBParser:
 
   def parse_line(self, line):
     tokens = line.split()
+    #Make all tokens lowercase so we ignore case sensitivity
+    tokens = map(lambda token: token.lower(), tokens)
 
     #GeoDB lines should have 3 fields
     if len(tokens) == 3:
