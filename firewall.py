@@ -2,6 +2,9 @@
 
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 from collections import namedtuple
+import socket, struct
+from bisect import bisect_left
+from datetime import datetime
 
 # TODO: Feel free to import any Python standard modules as necessary.
 # (http://docs.python.org/2/library/)
@@ -13,11 +16,12 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        # TODO: Load the firewall rules (from rule_filename) here.
         parser = RulesParser(config['rule'])
         self.rules = parser.parse_rules()
 
-        # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
+        geoParser = GeoDBParser('geoipdb.txt')
+        self.geo_nodes = geoParser.parse_lines()
+
         # TODO: Also do some initialization if needed.
 
     def handle_timer(self):
@@ -62,6 +66,27 @@ class Firewall:
     def packet_lookup(self, protocol, ext_IP_address, ext_port, is_dns_pkt):
       pass
 
+    #Returns True if the given ip belongs to a certain country. False o/w
+    def belongs_to_country(self, ip, country_code):
+      geo_node = self._bin_search(ip)
+      if geo_node:
+        return geo_node.country_code == country_code
+      else:
+        return False
+
+    #Finds the GeoDBNode within the range of the given IP or None if no node of appropriate range is found
+    def _bin_search(self, ip):
+      i = bisect_left(self.geo_nodes, ip)
+      if i != len(self.geo_nodes):
+        node = self.geo_nodes[i]
+        if node == ip:
+          return node
+        else:
+          return None
+      else:
+        return None
+
+
     # TODO: You can add more methods as you want.
 
 Rule = namedtuple('Rule', ['verdict', 'protocol', 'ext_IP_address', 'ext_port'])
@@ -98,6 +123,60 @@ class RulesParser:
 
   def _is_comment_line(self, line):
     return line.startswith("%")
+
+class GeoDBParser:
+
+  def __init__(self, filename):
+    self.filename = filename
+
+  def parse_lines(self):
+    f = open(self.filename, 'r')
+    nodes = []
+    for line in f:
+      node = self.parse_line(line)
+      nodes.append(node)
+    return nodes
+
+  def parse_line(self, line):
+    tokens = line.split()
+
+    #GeoDB lines should have 3 fields
+    if len(tokens) == 3:
+      return GeoDBNode(*tokens)
+    else:
+      return None
+
+class GeoDBNode:
+
+  def __init__(self, start_ip, end_ip, country_code):
+    self.start_ip = self.ip_to_int(start_ip)
+    self.end_ip = self.ip_to_int(end_ip)
+    self.country_code = country_code
+
+  def __lt__(self, other):
+    ip = self.ip_to_int(other)
+    return self.end_ip < ip
+
+  def __le__(self, other):
+    return self.__lt__(other) or self.__eq__(other)
+
+  def __ne__(self, other):
+    return not self.__eq__(other)
+
+  def __eq__(self, other):
+    ip = self.ip_to_int(other)
+    return self.start_ip <= ip and ip <= self.end_ip
+
+  def __gt__(self, other):
+    ip = self.ip_to_int(other)
+    return self.start_ip > ip
+
+  def __ge__(self, other):
+    return self.__gt__(other) or self.__eq__(other)
+
+  def ip_to_int(self, ip):
+    #From http://gist/githib.com/cslarsen/1595135
+    return reduce(lambda a,b: a<<8 | b, map(int, ip.split(".")))
 
 
 # TODO: You may want to add more classes/functions as well.
