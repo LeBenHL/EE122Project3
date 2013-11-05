@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
-from collections import namedtuple
 import socket, struct
 from bisect import bisect_left
 from datetime import datetime
@@ -18,9 +17,6 @@ class Firewall:
 
         parser = RulesParser(config['rule'])
         self.rules = parser.parse_rules()
-
-        geoParser = GeoDBParser('geoipdb.txt')
-        self.geo_nodes = geoParser.parse_lines()
 
         # TODO: Also do some initialization if needed.
 
@@ -66,31 +62,7 @@ class Firewall:
     def packet_lookup(self, protocol, ext_IP_address, ext_port, is_dns_pkt):
       pass
 
-    #Returns True if the given ip belongs to a certain country. False o/w
-    def belongs_to_country(self, ip, country_code):
-      geo_node = self._bin_search(ip)
-      if geo_node:
-        return geo_node.country_code == country_code
-      else:
-        return False
-
-    #Finds the GeoDBNode within the range of the given IP or None if no node of appropriate range is found
-    def _bin_search(self, ip):
-      i = bisect_left(self.geo_nodes, ip)
-      if i != len(self.geo_nodes):
-        node = self.geo_nodes[i]
-        if node == ip:
-          return node
-        else:
-          return None
-      else:
-        return None
-
-
     # TODO: You can add more methods as you want.
-
-Rule = namedtuple('Rule', ['verdict', 'protocol', 'ext_IP_address', 'ext_port'])
-DNSRule = namedtuple('DNSRule', ['verdict', 'protocol', 'domain_name'])
 
 class RulesParser:
 
@@ -106,7 +78,8 @@ class RulesParser:
       if line and not self._is_comment_line(line):
         rule = self.parse_line(line)
         if rule:
-          print rule
+          if rule.protocol != "dns":
+            rule.ext_IP_address == "128.0.0.1"
           rules.append(rule)
     return rules
 
@@ -178,6 +151,81 @@ class GeoDBNode:
 
   def __ge__(self, other):
     return self.__gt__(other) or self.__eq__(other)
+
+  def ip_to_int(self, ip):
+    #From http://gist/githib.com/cslarsen/1595135
+    return reduce(lambda a,b: a<<8 | b, map(int, ip.split(".")))
+
+class Rule:
+
+  def __init__(self, verdict, protocol, ext_IP_address, ext_port):
+    self.verdict = verdict
+    self.protocol = protocol
+    self.ext_IP_address = IPAddressRule(ext_IP_address)
+    self.ext_port = ext_port
+
+class DNSRule(Rule):
+
+  def __init__(self, verdict, protocol, domain_name):
+    self.verdict = verdict
+    self.protocol = protocol
+    self.domain_name = domain_name
+
+class IPAddressRule:
+
+  geoParser = GeoDBParser('geoipdb.txt')
+  geo_nodes = geoParser.parse_lines()
+
+  def __init__(self, ext_IP_address):
+    self.ext_IP_address = ext_IP_address
+    #Format "Any"
+    if ext_IP_address == "any":
+      self.type = "any"
+    #Format Country Code
+    elif len(ext_IP_address) == 2:
+      self.type = "country code"
+    #Hacky but this tells us if its a prefix
+    elif "/" in ext_IP_address:
+      self.type = "prefix"
+    #Hacky but since we assume correct rules syntax, it is a normal IP address otherwise
+    else:
+      self.type = "ip address"
+
+  def __eq__(self, other):
+    if self.type == "any":
+      return True
+    elif self.type == "country code":
+      return self.belongs_to_country(other, self.ext_IP_address)
+    elif self.type == "prefix":
+      tokens = self.ext_IP_address.split("/")
+      prefix = tokens[0]
+      slash = int(tokens[1])
+      mask = int("1" * slash, 2) << (32 - slash)
+      return (self.ip_to_int(prefix) & mask) == (self.ip_to_int(other) & mask)
+    elif self.type == "ip address":
+      return other == self.ext_IP_address
+    else:
+      raise Exception("WTF")
+
+  #Returns True if the given ip belongs to a certain country. False o/w
+  def belongs_to_country(self, ip, country_code):
+    geo_node = self._bin_search(ip)
+    if geo_node:
+      return geo_node.country_code == country_code
+    else:
+      return False
+
+  #Finds the GeoDBNode within the range of the given IP or None if no node of appropriate range is found
+  def _bin_search(self, ip):
+    i = bisect_left(self.geo_nodes, ip)
+    if i != len(self.geo_nodes):
+      node = self.geo_nodes[i]
+      if node == ip:
+        return node
+      else:
+        return None
+    else:
+      return None
 
   def ip_to_int(self, ip):
     #From http://gist/githib.com/cslarsen/1595135
