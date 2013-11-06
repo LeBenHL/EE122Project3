@@ -91,8 +91,6 @@ class RulesParser:
       if line and not self._is_comment_line(line):
         rule = self.parse_line(line)
         if rule:
-          if rule.protocol != "dns":
-            rule.ext_IP_address == "128.0.0.1"
           rules.append(rule)
     return rules
 
