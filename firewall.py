@@ -177,35 +177,10 @@ class IPAddressField:
   geo_nodes = geoParser.parse_lines()
 
   def __init__(self, ext_IP_address):
-    self.ext_IP_address = ext_IP_address
-    #Format "Any"
-    if ext_IP_address == "any":
-      self.type = "any"
-    #Format Country Code
-    elif len(ext_IP_address) == 2:
-      self.type = "country code"
-    #Hacky but this tells us if its a prefix
-    elif "/" in ext_IP_address:
-      self.type = "prefix"
-    #Hacky but since we assume correct rules syntax, it is a normal IP address otherwise
-    else:
-      self.type = "ip address"
+    pass
 
   def __eq__(self, other):
-    if self.type == "any":
-      return True
-    elif self.type == "country code":
-      return self.belongs_to_country(other, self.ext_IP_address)
-    elif self.type == "prefix":
-      tokens = self.ext_IP_address.split("/")
-      prefix = tokens[0]
-      slash = int(tokens[1])
-      mask = int("1" * slash, 2) << (32 - slash)
-      return (self.ip_to_int(prefix) & mask) == (self.ip_to_int(other) & mask)
-    elif self.type == "ip address":
-      return other == self.ext_IP_address
-    else:
-      raise Exception("WTF")
+    pass
 
   #Returns True if the given ip belongs to a certain country. False o/w
   def belongs_to_country(self, ip, country_code):
@@ -234,28 +209,10 @@ class IPAddressField:
 class ExtPortField:
 
   def __init__(self, ext_port):
-    self.ext_port = ext_port
-    #Format "Any"
-    if ext_port == "any":
-      self.type = "any"
-    #Format Single Number
-    elif self._is_integer(ext_port):
-      self.type = "number"
-    #Format Range
-    else:
-      self.type = "range"
-      self.range = reduce(lambda x: int(x), self.ext_port.split('-'))
+    pass
 
   def __eq__(self, other):
-    if self.type == "any":
-      return True
-    elif self.type == "number":
-      return self.ext_port == other
-    elif self.type == "range":
-      port_no = int(other) 
-      return self.range[0] <= port_no and port_no <= self.range[1]
-    else:
-      raise Exception("WTF EXT PORT, port: %s type: %s" % (self.ext_port, self.type))
+    pass
 
   def _is_integer(self, ext_port):
     try:
@@ -267,20 +224,9 @@ class ExtPortField:
 class DomainNameField:
 
   def __init__(self, domain_name):
-    self.domain_name = domain_name
-    #Format WildCard Parsing
-    if domain_name.startswith("*"):
-      self.type = "wildcard"
-    #Format Exact match
-    else:
-      self.type = "exact"
+    pass
 
   def __eq__(self, other):
-    if self.type == "wildcard":
-      return other.endswith(self.domain_name[1:])
-    elif self.type == "exact":
-      return self.domain_name == other
-    else:
-      raise Exception('WTF DOMAIN NAME, domain: %s, type: %s' % (self.domain_name, self.type))
+    pass
 
 # TODO: You may want to add more classes/functions as well.
