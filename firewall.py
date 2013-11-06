@@ -29,9 +29,10 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
-        protocol, ext_IP_address, ext_port, is_dns_pkt = self.read_packet(pkt, pkt_dir)
+        protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name = self.read_packet(pkt, pkt_dir)
+        wrapped_packet = Wrap_Packet(protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name)
 
-        verdict = self.packet_lookup(protocol, ext_IP_address, ext_port, is_dns_pkt)
+        verdict = self.packet_lookup(wrapped_packet)
 
         if verdict == "pass":
           if pkt_dir == PKT_DIR_INCOMING:
@@ -54,26 +55,28 @@ class Firewall:
 
       # Determine whether or not the packet is a DNS query
 
-      return protocol, ext_IP_address, ext_port, is_dns_pkt
+      return protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name
 
     # Looks through the self.rules list and returns the verdict of the latest
     # rule in the list that matches the packet fields
     # Returns verdict==True if no rules in the list match the packet fields
-    def packet_lookup(self, pkt_protocol, ext_IP_address, ext_port, is_dns_pkt):
+    def packet_lookup(self, wrapped_packet):
 
     	# Set verdict initially to true so that if no rules match packet fields
     	# then the packet will be passed to the appropriate interface
-    	verdict = Truehttp://us-mg6.mail.yahoo.com/neo/launch?.rand=f5d64sgps1s4i#
+    	verdict = True
 
     	for rule in self.rules:
-    		if rule.protocol == pkt_protocol:
-    			# Examine rule further since protocol matches (TCP/UDP/ICMP)
-    			if 
-    		elif rule.protocol == "dns" and is_dns_pkt == true:
+    		if rule.protocol == wrapped_packet.protocol:
+    			# Examine rule further since rule protocol matches packet protocol (TCP/UDP/ICMP)
+    			if wrapped_packet.ext_IP_address == rule.ext_IP_address and wrapped_packet.ext_port == rule.ext_port:
+    				verdict = rule.verdict
+    		elif rule.protocol == "dns" and wrapped_packet.is_dns_pkt == true:
     			# Examine rule further since it is a DNS rule and packet is dns query
-
+    			# wrapped_packet only has a domain_name field if is_dns_pkt is true for wrapped_packet
+    			if wrapped_packet.domain_name == rule.domain_name:
+    				verdict = rule.verdict
     	return verdict
-
 
     # TODO: You can add more methods as you want.
 
@@ -175,6 +178,15 @@ class Rule:
     self.ext_IP_address = IPAddressField(ext_IP_address)
     self.ext_port = ExtPortField(ext_port)
 
+class WrappedPacket:
+	def __init__(self, protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name):
+		self.protocol = protocol
+    self.ext_IP_address = IPAddressField(ext_IP_address)
+    self.ext_port = ExtPortField(ext_port)
+    self.is_dns_pkt = is_dns_pkt
+    if self.is_dns_pkt == True:
+    	self.domain_name = DomainNameField(domain_name)
+
 class DNSRule(Rule):
 
   def __init__(self, verdict, protocol, domain_name):
@@ -188,11 +200,37 @@ class IPAddressField:
   geo_nodes = geoParser.parse_lines()
 
   def __init__(self, ext_IP_address):
-  	pass
+  	self.ext_IP_address = ext_IP_address
 
+  	# Have this set up as a field so that way don't have to
+  	# keep determining if IPAddressField obj wraps an IP prefix
+  	self.is_IP_prefix = false
+  	if "/" in self.ext_IP_address:
+  		self.is_IP_prefix = true
+  		# Element 0 is the IP, Element 1 is the slash #
+  		self._decimal_ip_and_prefix = other.ext_IP_address.split("/")
+  		# Ask: any reason to make ip_to_int an instance function?
+  		self._decimal_ip = self.ip_to_int(_decimal_ip_and_prefix[0])
+  		self.slash_num = _decimal_ip_and_prefix[1]
+  		self.relevant_portion = self.relevant_ip_portion(self._decimal_ip, self.slash_num)
+
+
+  # Assume that the lhs of "==" is always the external IP address
+  # of the packet, while the rhs is always the external Ip addr of the
+  # rule that you're trying to match up with the packet
   def __eq__(self, other):
-
-  	
+  	if other.ext_IP_address == "any":
+  		return True
+  	elif len(other.ext_IP_address) == 2:
+  		# other.ext_IP_address is a 2-byte country code
+  		return belongs_to_country(self.ext_IP_address, other.ext_IP_address)
+  	elif other.is_IP_prefix:
+  		# TODO: Deal with IP prefix case
+  		self.decimal_ip = ip_to_int(self.ext_IP_address)
+  		return self.relevant_ip_portion(self.decimal_ip, other.slash_num) == other.relevant_portion
+  	else:
+  		# other.ext_IP_address is just an IP address
+  		return self.ext_IP_address == other.ext_IP_address
 
   #Returns True if the given ip belongs to a certain country. False o/w
   def belongs_to_country(self, ip, country_code):
@@ -218,13 +256,39 @@ class IPAddressField:
     #From http://gist/githib.com/cslarsen/1595135
     return reduce(lambda a,b: a<<8 | b, map(int, ip.split(".")))
 
+  # Return the network component of the inputted IP address zero-extended
+  # at the end (for later comparison of network component portions)
+  def relevant_ip_portion(self, ip, slash_num):
+  	relevant_ip = 0xFFFFFFFF >> (32 - slash_num)
+  	relevant_ip = 0xFFFFFFFF << (32 - slash_num)
+  	return relevant_ip
+
+
 class ExtPortField:
 
   def __init__(self, ext_port):
-    pass
+  	self.ext_port = ext_port
+  	self.is_a_range = false
+   	if "-" in self.ext_port:
+  		self.is_a_range = true
+  		self._temp_list = self.ext_port.split("-")
+  		self.start_port = self._temp_list[0]
+  		self.end_port = self._temp_list[1]
 
+  # Assume that the lhs of "==" is always the external port
+  # of the packet, while the rhs is always the external port of the
+  # rule that you're trying to match up with the packet
   def __eq__(self, other):
-    pass
+  	if other.ext_port == "any":
+  		return True
+  	elif other.is_a_range == true:
+  		if self.ext_port >= other.start_port && self.ext_port <= other.end_port:
+  			return True
+  		else:
+  			return False
+  	else:
+  		# other.ext_port should be a single value
+  		return self.ext_port == other.ext_port
 
   def _is_integer(self, ext_port):
     try:
@@ -236,9 +300,32 @@ class ExtPortField:
 class DomainNameField:
 
   def __init__(self, domain_name):
-    pass
+  	self._domain_name = domain_name
+  	self._intermediate_list = self._domain_name.split(".")
+  	# self.rev_domain_name_list is the result of a string split into
+  	# multiple elements by the . delimiter, followed by a reverse oper.
+  	# that reverses the elements in the list
+  	self.rev_domain_name_list = reversed(self._intermediate_list)
 
+  # Assume that the lhs of "==" is always the domain name
+  # of the packet, while the rhs is always the domain name of
+  # the rule that you're trying to match up with the packet
   def __eq__(self, other):
-    pass
+  	int i = 0;
+  	for partURL in other.rev_domain_name_list:
+  		# Assume that DNS query rules only have good syntax
+  		if partURL == "*":
+  			# Since the current partURL is "*", do not care what the rest of self.rev_domain_name_list is
+  			return True
+  		else:
+  			# partURL is a portion of a url like "gov" or "fda"
+  			if partURL != self.rev_domain_name_list[i]:
+  				return False
+  			else:
+  				# partURL portion matches self.self.rev_domain_name_list[i] (e.g. both domain names end in 'gov')
+  				i++
+  	# Should never reach this part
+  	return False
+
 
 # TODO: You may want to add more classes/functions as well.
