@@ -161,17 +161,17 @@ class Rule:
   def __init__(self, verdict, protocol, ext_IP_address, ext_port):
     self.verdict = verdict
     self.protocol = protocol
-    self.ext_IP_address = IPAddressRule(ext_IP_address)
-    self.ext_port = ext_port
+    self.ext_IP_address = IPAddressField(ext_IP_address)
+    self.ext_port = ExtPortField(ext_port)
 
 class DNSRule(Rule):
 
   def __init__(self, verdict, protocol, domain_name):
     self.verdict = verdict
     self.protocol = protocol
-    self.domain_name = domain_name
+    self.domain_name = DomainNameField(domain_name)
 
-class IPAddressRule:
+class IPAddressField:
 
   geoParser = GeoDBParser('geoipdb.txt')
   geo_nodes = geoParser.parse_lines()
@@ -231,5 +231,56 @@ class IPAddressRule:
     #From http://gist/githib.com/cslarsen/1595135
     return reduce(lambda a,b: a<<8 | b, map(int, ip.split(".")))
 
+class ExtPortField:
+
+  def __init__(self, ext_port):
+    self.ext_port = ext_port
+    #Format "Any"
+    if ext_port == "any":
+      self.type = "any"
+    #Format Single Number
+    elif self._is_integer(ext_port):
+      self.type = "number"
+    #Format Range
+    else:
+      self.type = "range"
+      self.range = reduce(lambda x: int(x), self.ext_port.split('-'))
+
+  def __eq__(self, other):
+    if self.type == "any":
+      return True
+    elif self.type == "number":
+      return self.ext_port == other
+    elif self.type == "range":
+      port_no = int(other) 
+      return self.range[0] <= port_no and port_no <= self.range[1]
+    else:
+      raise Exception("WTF EXT PORT, port: %s type: %s" % (self.ext_port, self.type))
+
+  def _is_integer(self, ext_port):
+    try:
+      int(ext_port)
+      return True
+    except ValueError:
+      return False
+
+class DomainNameField:
+
+  def __init__(self, domain_name):
+    self.domain_name = domain_name
+    #Format WildCard Parsing
+    if domain_name.startswith("*"):
+      self.type = "wildcard"
+    #Format Exact match
+    else:
+      self.type = "exact"
+
+  def __eq__(self, other):
+    if self.type == "wildcard":
+      return other.endswith(self.domain_name[1:])
+    elif self.type == "exact":
+      return self.domain_name == other
+    else:
+      raise Exception('WTF DOMAIN NAME, domain: %s, type: %s' % (self.domain_name, self.type))
 
 # TODO: You may want to add more classes/functions as well.
