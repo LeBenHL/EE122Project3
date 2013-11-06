@@ -31,7 +31,7 @@ class Firewall:
 
         protocol, ext_IP_address, ext_port, is_dns_pkt = self.read_packet(pkt, pkt_dir)
 
-        list_of_rules = self.packet_lookup(protocol, ext_IP_address, ext_port, is_dns_pkt)
+        verdict = self.packet_lookup(protocol, ext_IP_address, ext_port, is_dns_pkt)
 
         if verdict == "pass":
           if pkt_dir == PKT_DIR_INCOMING:
@@ -56,11 +56,24 @@ class Firewall:
 
       return protocol, ext_IP_address, ext_port, is_dns_pkt
 
-    # Searches through the rules file given as input in a linear fashion
-    # and appends rules(as named tuples) to the list list_of_rules in the
-    # order that they match the packet criteria
-    def packet_lookup(self, protocol, ext_IP_address, ext_port, is_dns_pkt):
-      pass
+    # Looks through the self.rules list and returns the verdict of the latest
+    # rule in the list that matches the packet fields
+    # Returns verdict==True if no rules in the list match the packet fields
+    def packet_lookup(self, pkt_protocol, ext_IP_address, ext_port, is_dns_pkt):
+
+    	# Set verdict initially to true so that if no rules match packet fields
+    	# then the packet will be passed to the appropriate interface
+    	verdict = Truehttp://us-mg6.mail.yahoo.com/neo/launch?.rand=f5d64sgps1s4i#
+
+    	for rule in self.rules:
+    		if rule.protocol == pkt_protocol:
+    			# Examine rule further since protocol matches (TCP/UDP/ICMP)
+    			if 
+    		elif rule.protocol == "dns" and is_dns_pkt == true:
+    			# Examine rule further since it is a DNS rule and packet is dns query
+
+    	return verdict
+
 
     # TODO: You can add more methods as you want.
 
@@ -177,10 +190,11 @@ class IPAddressField:
   geo_nodes = geoParser.parse_lines()
 
   def __init__(self, ext_IP_address):
-    pass
+  	pass
 
   def __eq__(self, other):
-    pass
+
+  	
 
   #Returns True if the given ip belongs to a certain country. False o/w
   def belongs_to_country(self, ip, country_code):
