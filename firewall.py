@@ -184,7 +184,7 @@ class WrappedPacket:
     self.ext_IP_address = IPAddressField(ext_IP_address)
     self.ext_port = ExtPortField(ext_port)
     self.is_dns_pkt = is_dns_pkt
-    if self.is_dns_pkt == True:
+    if self.is_dns_pkt:
     	self.domain_name = DomainNameField(domain_name)
 
 class DNSRule(Rule):
@@ -204,15 +204,16 @@ class IPAddressField:
 
   	# Have this set up as a field so that way don't have to
   	# keep determining if IPAddressField obj wraps an IP prefix
-  	self.is_IP_prefix = false
   	if "/" in self.ext_IP_address:
   		self.is_IP_prefix = true
   		# Element 0 is the IP, Element 1 is the slash #
-  		self._decimal_ip_and_prefix = other.ext_IP_address.split("/")
+  		_decimal_ip_and_prefix = other.ext_IP_address.split("/")
   		# Ask: any reason to make ip_to_int an instance function?
   		self._decimal_ip = self.ip_to_int(_decimal_ip_and_prefix[0])
   		self.slash_num = _decimal_ip_and_prefix[1]
   		self.relevant_portion = self.relevant_ip_portion(self._decimal_ip, self.slash_num)
+    else:
+      self.is_IP_prefix = false
 
 
   # Assume that the lhs of "==" is always the external IP address
@@ -226,8 +227,8 @@ class IPAddressField:
   		return belongs_to_country(self.ext_IP_address, other.ext_IP_address)
   	elif other.is_IP_prefix:
   		# TODO: Deal with IP prefix case
-  		self.decimal_ip = ip_to_int(self.ext_IP_address)
-  		return self.relevant_ip_portion(self.decimal_ip, other.slash_num) == other.relevant_portion
+  		decimal_ip = ip_to_int(self.ext_IP_address)
+  		return self.relevant_ip_portion(decimal_ip, other.slash_num) == other.relevant_portion
   	else:
   		# other.ext_IP_address is just an IP address
   		return self.ext_IP_address == other.ext_IP_address
@@ -272,8 +273,8 @@ class ExtPortField:
    	if "-" in self.ext_port:
   		self.is_a_range = true
   		self._temp_list = self.ext_port.split("-")
-  		self.start_port = self._temp_list[0]
-  		self.end_port = self._temp_list[1]
+  		self.start_port = int(self._temp_list[0])
+  		self.end_port = int(self._temp_list[1])
 
   # Assume that the lhs of "==" is always the external port
   # of the packet, while the rhs is always the external port of the
@@ -282,10 +283,8 @@ class ExtPortField:
   	if other.ext_port == "any":
   		return True
   	elif other.is_a_range == true:
-  		if self.ext_port >= other.start_port && self.ext_port <= other.end_port:
-  			return True
-  		else:
-  			return False
+      ext_port_as_int = int(self.ext_port)
+  		return ext_port_as_int >= other.start_port and ext_port_as_int <= other.end_port
   	else:
   		# other.ext_port should be a single value
   		return self.ext_port == other.ext_port
@@ -311,8 +310,7 @@ class DomainNameField:
   # of the packet, while the rhs is always the domain name of
   # the rule that you're trying to match up with the packet
   def __eq__(self, other):
-  	int i = 0;
-  	for partURL in other.rev_domain_name_list:
+  	for i, partURL in enumerate(other.rev_domain_name_list):
   		# Assume that DNS query rules only have good syntax
   		if partURL == "*":
   			# Since the current partURL is "*", do not care what the rest of self.rev_domain_name_list is
@@ -321,11 +319,8 @@ class DomainNameField:
   			# partURL is a portion of a url like "gov" or "fda"
   			if partURL != self.rev_domain_name_list[i]:
   				return False
-  			else:
-  				# partURL portion matches self.self.rev_domain_name_list[i] (e.g. both domain names end in 'gov')
-  				i++
   	# Should never reach this part
-  	return False
+  	raise Exception("WTF WE FUCKED UP")
 
 
 # TODO: You may want to add more classes/functions as well.
