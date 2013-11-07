@@ -260,8 +260,9 @@ class IPAddressField:
   # Return the network component of the inputted IP address zero-extended
   # at the end (for later comparison of network component portions)
   def relevant_ip_portion(self, ip, slash_num):
-  	relevant_ip = 0xFFFFFFFF >> (32 - slash_num)
-  	relevant_ip = 0xFFFFFFFF << (32 - slash_num)
+  	subnet_mask = 0xFFFFFFFF >> (32 - slash_num)
+  	subnet_mask = subnet_mask << (32 - slash_num)
+    relevant_ip = ip & subnet_mask
   	return relevant_ip
 
 
