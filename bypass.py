@@ -35,22 +35,23 @@ class Firewall:
 
         #Lossy Firewall
         if (self.lossy and self.loss_percentage >= random.uniform(0, 100)):
-            return
-
-        src_ip = pkt[12:16]
-        dst_ip = pkt[16:20]
-        ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
-        
-        if pkt_dir == PKT_DIR_INCOMING:
-            dir_str = 'incoming'
+            print "LOSS"
+            pass
         else:
-            dir_str = 'outgoing'
+            src_ip = pkt[12:16]
+            dst_ip = pkt[16:20]
+            ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
+            
+            if pkt_dir == PKT_DIR_INCOMING:
+                dir_str = 'incoming'
+            else:
+                dir_str = 'outgoing'
 
-        print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
-                socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
+            print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
+                    socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
 
-        # ... and simply allow the packet.
-        if pkt_dir == PKT_DIR_INCOMING:
-            self.iface_int.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_OUTGOING:
-            self.iface_ext.send_ip_packet(pkt)
+            # ... and simply allow the packet.
+            if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send_ip_packet(pkt)
+            elif pkt_dir == PKT_DIR_OUTGOING:
+                self.iface_ext.send_ip_packet(pkt)

@@ -37,18 +37,19 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         #Lossy Firewall
         if (self.lossy and self.loss_percentage >= random.uniform(0, 100)):
-            return
+          print "LOSS"
+          pass
+        else:
+          protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name = self.read_packet(pkt, pkt_dir)
+          wrapped_packet = Wrap_Packet(protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name)
 
-        protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name = self.read_packet(pkt, pkt_dir)
-        wrapped_packet = Wrap_Packet(protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name)
+          verdict = self.packet_lookup(wrapped_packet)
 
-        verdict = self.packet_lookup(wrapped_packet)
-
-        if verdict == "pass":
-          if pkt_dir == PKT_DIR_INCOMING:
-            self.iface_int.send_ip_packet(pkt)
-          else: # pkt_dir == PKT_DIR_OUTGOING
-            self.iface_ext.send_ip_packet(pkt)
+          if verdict == "pass":
+            if pkt_dir == PKT_DIR_INCOMING:
+              self.iface_int.send_ip_packet(pkt)
+            else: # pkt_dir == PKT_DIR_OUTGOING
+              self.iface_ext.send_ip_packet(pkt)
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
