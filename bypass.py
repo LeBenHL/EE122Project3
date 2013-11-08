@@ -5,12 +5,19 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import socket
 import struct
 import time
+import random
 
 class Firewall:
     def __init__(self, config, timer, iface_int, iface_ext):
         self.timer = timer
         self.iface_int = iface_int
         self.iface_ext = iface_ext
+        try:
+            self.lossy = True
+            self.loss_percentage = float(config['loss'])
+            print self.loss_percentage
+        except KeyError:
+            self.lossy = False
 
         print 'bypass mode!'
 
@@ -25,6 +32,11 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # The example code here prints out the source/destination IP addresses,
         # which is unnecessary for your submission.
+
+        #Lossy Firewall
+        if (self.lossy and self.loss_percentage >= random.uniform(0, 100)):
+            return
+
         src_ip = pkt[12:16]
         dst_ip = pkt[16:20]
         ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
