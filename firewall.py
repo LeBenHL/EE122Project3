@@ -29,8 +29,10 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
-        protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name = self.read_packet(pkt, pkt_dir)
-        wrapped_packet = Wrap_Packet(protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name)
+        protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, ok_header_len = self.read_packet(pkt, pkt_dir)
+        if (!ok_header_len):
+          return
+        wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
         verdict = self.packet_lookup(wrapped_packet)
 
@@ -43,19 +45,87 @@ class Firewall:
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
     # Also determines whether or not a packet is a DNS packet and returns that as well
+    # TODO: Check that packets are laid out in memory BIG-ENDIAN
     def read_packet(self, pkt, pkt_dir):
+
       # Need to retrieve the protocol that the packet follows
-      
+      protocol_tmp = struct.unpack('!B',pkt[9])[0] # Protocol number corresponding to TCP/UDP/ICMP-type
+
+      if protocol_tmp == 1:
+        protocol = "ICMP"
+      elif protocol_tmp == 6:
+        protocol = "TCP"
+      else: # protocol_tmp == 17
+        protocol = "UDP"
+
+      header_len_tmp = struct.unpack('!B',pkt[0])[0]
+      header_len = header_len_tmp & 0xFF
+      if header_len < 5:
+        # Check additional specs to see that packets with header length < 5 should be dropped.
+        ok_header_len = False
+      else: # header_len >= 5
+        tl_index = header_len*4
+        ok_header_len = True
+
       if pkt_dir == PKT_DIR_INCOMING:
-        pass
+        ext_ip_tmp = pkt[12:16] # external IP address is source IP address
+        if protocol != "ICMP":
+          ext_port_tmp = struct.unpack('!H',pkt[tl_index:tl_index+2])[0]
         # Retrieve the source IP address and source port of the packet
       else: # pkt_dir == PKT_DIR_OUTGOING
-        pass
-        # Retrieve the destination IP address and destination port of the packet
+        ext_ip_tmp = pkt[16:20] # external IP address is destination IP address
+        if protocol != "ICMP":
+          ext_port_tmp = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
 
-      # Determine whether or not the packet is a DNS query
+      # Packet is ICMP-type packet
+      if protocol == "ICMP":
+        ext_port_tmp = struct.unpack('!B',pkt[tl_index])[0] # Independent of pkt_dir value
 
-      return protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name
+      # Retrieve the string representation of the external IP address of a packet
+      external_IP_address = socket.inet_ntoa(ext_ip_tmp)
+
+      # Retrieve the string representation of the external port of a packet
+      ext_port = (str) ext_port_tmp
+
+      # check_dns_rules determines whether or not a packet should be considered
+      # for DNS rule matching. Initially set to False unless can prove otherwise.
+      check_dns_rules = False
+      domain_name = None
+      dst_port = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
+
+      if protocol == "UDP" and dst_port == 53:
+        # Check to see if there is exactly one DNS question entry
+        # Application layer starts at index = tl_index + 8
+        al_index = tl_index + 8
+        QDCOUNT = struct.unpack('!H',pkt[al_index+4:al_index+6])[0]
+        if QDCOUNT == 1:
+          len_byte_index = al_index+12
+          length_byte = struct.unpack('!B',pkt[len_byte_index])[0]
+          list_of_domain_parts = []
+          while (length_byte != 0):
+            tuple_of_ascii_char = struct.unpack('!B',pkt[len_byte_index+1:len_byte_index+length_byte+1])
+            list_of_domain_parts.append(tuple_of_ascii_char)
+            len_byte_index = len_byte_index+length_byte+1
+            length_byte = struct.unpack('!B', pkt[len_byte_index])[0]
+
+          # Converts the list list_of_domain_parts to a string domain name
+          domain_name = parse_domain_name(list_of_domain_parts)
+
+          # len_byte_index now represents the starting index of QTYPE
+          QTYPE = struct.unpack('!H',pkt[len_byte_index:len_byte_index+2])[0]
+          QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
+
+          if ((QTYPE == 1 or QTYPE == 28) and QCLASS == 1):
+            check_dns_rules = True
+
+      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, ok_header_len
+
+    # Plz write this for me Ben
+    # Given a list
+    # [(0x77, 0x77, 0x77,), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,), (0x63, 0x6f, 0x6d,)]
+    # return "www.google.com"
+    def parse_domain_name(list_of_domain_parts):
+      pass
 
     # Looks through the self.rules list and returns the verdict of the latest
     # rule in the list that matches the packet fields
@@ -71,9 +141,9 @@ class Firewall:
     			# Examine rule further since rule protocol matches packet protocol (TCP/UDP/ICMP)
     			if wrapped_packet.ext_IP_address == rule.ext_IP_address and wrapped_packet.ext_port == rule.ext_port:
     				verdict = rule.verdict
-    		elif rule.protocol == "dns" and wrapped_packet.is_dns_pkt == true:
-    			# Examine rule further since it is a DNS rule and packet is dns query
-    			# wrapped_packet only has a domain_name field if is_dns_pkt is true for wrapped_packet
+    		elif rule.protocol == "dns" and wrapped_packet.check_dns_rules == true:
+    			# Examine rule further since check_dns_rules indicates that a packet should be checked against DNS rules
+    			# wrapped_packet only has a domain_name field if check_dns_rules is true for wrapped_packet
     			if wrapped_packet.domain_name == rule.domain_name:
     				verdict = rule.verdict
     	return verdict
@@ -179,12 +249,12 @@ class Rule:
     self.ext_port = ExtPortField(ext_port)
 
 class WrappedPacket:
-	def __init__(self, protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name):
+	def __init__(self, protocol, ext_IP_address, ext_port, check_dns_rules, domain_name):
 		self.protocol = protocol
     self.ext_IP_address = IPAddressField(ext_IP_address)
     self.ext_port = ExtPortField(ext_port)
-    self.is_dns_pkt = is_dns_pkt
-    if self.is_dns_pkt:
+    self.check_dns_rules = check_dns_rules
+    if self.check_dns_rules:
     	self.domain_name = DomainNameField(domain_name)
 
 class DNSRule(Rule):
