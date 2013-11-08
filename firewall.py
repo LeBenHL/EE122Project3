@@ -19,7 +19,6 @@ class Firewall:
         try:
             self.lossy = True
             self.loss_percentage = float(config['loss'])
-            print self.loss_percentage
         except KeyError:
             self.lossy = False
 
@@ -37,7 +36,6 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         #Lossy Firewall
         if (self.lossy and self.loss_percentage >= random.uniform(0, 100)):
-          print "LOSS"
           pass
         else:
           protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name = self.read_packet(pkt, pkt_dir)
