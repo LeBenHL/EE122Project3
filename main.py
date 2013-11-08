@@ -85,8 +85,8 @@ class PacketInterceptor:
         sys.stdout.write('Initializing...')
         sys.stdout.flush()
 
-        #self.setup_interfaces()
-        #self.get_mac_addrs()
+        self.setup_interfaces()
+        self.get_mac_addrs()
 
         sys.stdout.write(' done\n')
       
@@ -226,4 +226,4 @@ if __name__ == '__main__':
         sys.exit(1)
 
     interceptor = PacketInterceptor(config)
-    #interceptor.run()
+    interceptor.run()
