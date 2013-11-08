@@ -34,7 +34,7 @@ class Firewall:
         # which is unnecessary for your submission.
 
         #Lossy Firewall
-        if (self.lossy and self.loss_percentage >= random.uniform(0, 100)):
+        if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
             print "LOSS"
             pass
         else:

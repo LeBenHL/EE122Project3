@@ -35,7 +35,7 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         #Lossy Firewall
-        if (self.lossy and self.loss_percentage >= random.uniform(0, 100)):
+        if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
           pass
         else:
           protocol, ext_IP_address, ext_port, is_dns_pkt, domain_name = self.read_packet(pkt, pkt_dir)
