@@ -4,6 +4,7 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import socket, struct
 from bisect import bisect_left
 from datetime import datetime
+import random
 
 # TODO: Feel free to import any Python standard modules as necessary.
 # (http://docs.python.org/2/library/)
@@ -14,6 +15,12 @@ class Firewall:
         self.timer = timer
         self.iface_int = iface_int
         self.iface_ext = iface_ext
+
+        try:
+            self.lossy = True
+            self.loss_percentage = float(config['loss'])
+        except KeyError:
+            self.lossy = False
 
         parser = RulesParser(config['rule'])
         self.rules = parser.parse_rules()
@@ -28,19 +35,22 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
+        #Lossy Firewall
+        if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
+          pass
+        else:
+          protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, ok_header_len = self.read_packet(pkt, pkt_dir)
+          if (!ok_header_len):
+            return
+          wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
-        protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, ok_header_len = self.read_packet(pkt, pkt_dir)
-        if (!ok_header_len):
-          return
-        wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
+          verdict = self.packet_lookup(wrapped_packet)
 
-        verdict = self.packet_lookup(wrapped_packet)
-
-        if verdict == "pass":
-          if pkt_dir == PKT_DIR_INCOMING:
-            self.iface_int.send_ip_packet(pkt)
-          else: # pkt_dir == PKT_DIR_OUTGOING
-            self.iface_ext.send_ip_packet(pkt)
+          if verdict == "pass":
+            if pkt_dir == PKT_DIR_INCOMING:
+              self.iface_int.send_ip_packet(pkt)
+            else: # pkt_dir == PKT_DIR_OUTGOING
+              self.iface_ext.send_ip_packet(pkt)
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
