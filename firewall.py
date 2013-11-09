@@ -137,7 +137,7 @@ class Firewall:
     def parse_domain_name(list_of_domain_parts):
       domain_parts = []
       for domain_part in list_of_domain_parts:
-        domain_parts.append(bytearray(domain).decode('ascii').encode('ascii'))
+        domain_parts.append(bytearray(domain_part).decode('ascii').encode('ascii'))
       return ".".join(domain_parts)
 
 
