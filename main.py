@@ -85,8 +85,8 @@ class PacketInterceptor:
         sys.stdout.write('Initializing...')
         sys.stdout.flush()
 
-        #self.setup_interfaces()
-        #self.get_mac_addrs()
+        self.setup_interfaces()
+        self.get_mac_addrs()
 
         sys.stdout.write(' done\n')
       
@@ -95,7 +95,7 @@ class PacketInterceptor:
         try:
             module = __import__(config['mode'], fromlist = ['Firewall'])
             self.firewall = module.Firewall(config, self.timer, 
-                    None, None)
+                    self.iface_int, self.iface_ext)
         except ImportError:
             print >> sys.stderr, 'Cannot import the Firewall class from %s.py' \
                     % config['mode']
@@ -195,7 +195,7 @@ if __name__ == '__main__':
         dom_socket.bind('\0SuperAwesomeFirewall')    
     except socket.error:
         print >> sys.stderr, 'Another instance of the firewall is running!'
-        #sys.exit(1)
+        sys.exit(1)
 
     if os.getuid() != 0:
         print >> sys.stderr, 'You must have the root privilege to run this program!'
@@ -226,4 +226,4 @@ if __name__ == '__main__':
         sys.exit(1)
 
     interceptor = PacketInterceptor(config)
-    #interceptor.run()
+    interceptor.run()
