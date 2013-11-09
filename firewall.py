@@ -132,10 +132,14 @@ class Firewall:
 
     # Plz write this for me Ben
     # Given a list
-    # [(0x77, 0x77, 0x77,), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,), (0x63, 0x6f, 0x6d,)]
+    # [(0x77, 0x77, 0x77), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65), (0x63, 0x6f, 0x6d)]
     # return "www.google.com"
     def parse_domain_name(list_of_domain_parts):
-      pass
+      domain_parts = []
+      for domain_part in list_of_domain_parts:
+        domain_parts.append(bytearray(domain).decode('ascii').encode('ascii'))
+      return ".".join(domain_parts)
+
 
     # Looks through the self.rules list and returns the verdict of the latest
     # rule in the list that matches the packet fields
