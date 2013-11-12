@@ -44,7 +44,7 @@ class Firewall:
           except IndexError as e:
             print "This is a malformed packet!! Bad!"
             is_bad_packet = True # is_bad_packet is also set to True for a certain case involving header length in self.read_packet
-          if (!is_bad_packet):
+          if not is_bad_packet:
             return
           wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
@@ -99,7 +99,7 @@ class Firewall:
       external_IP_address = socket.inet_ntoa(ext_ip_tmp)
 
       # Retrieve the string representation of the external port of a packet
-      ext_port = (str) ext_port_tmp
+      ext_port = str(ext_port_tmp)
 
       # check_dns_rules determines whether or not a packet should be considered
       # for DNS rule matching. Initially set to False unless can prove otherwise.
@@ -129,7 +129,7 @@ class Firewall:
           QTYPE = struct.unpack('!H',pkt[len_byte_index:len_byte_index+2])[0]
           QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
 
-          if ((QTYPE == 1 or QTYPE == 28) and QCLASS == 1):
+          if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
 
       return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet
@@ -212,7 +212,8 @@ class GeoDBParser:
     nodes = []
     for line in f:
       node = self.parse_line(line)
-      nodes.append(node)
+      if node != None:
+      	nodes.append(node)
     return nodes
 
   def parse_line(self, line):
@@ -267,6 +268,7 @@ class Rule:
     self.ext_port = ExtPortField(ext_port)
 
 class WrappedPacket:
+
 	def __init__(self, protocol, ext_IP_address, ext_port, check_dns_rules, domain_name):
 		self.protocol = protocol
     self.ext_IP_address = IPAddressField(ext_IP_address)
