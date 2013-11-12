@@ -66,11 +66,11 @@ class Firewall:
       protocol_tmp = struct.unpack('!B',pkt[9])[0] # Protocol number corresponding to TCP/UDP/ICMP-type
 
       if protocol_tmp == 1:
-        protocol = "ICMP"
+        protocol = "icmp"
       elif protocol_tmp == 6:
-        protocol = "TCP"
+        protocol = "tcp"
       else: # protocol_tmp == 17
-        protocol = "UDP"
+        protocol = "udp"
 
       header_len_tmp = struct.unpack('!B',pkt[0])[0]
       header_len = header_len_tmp & 0x0F
@@ -83,16 +83,16 @@ class Firewall:
 
       if pkt_dir == PKT_DIR_INCOMING:
         ext_ip_tmp = pkt[12:16] # external IP address is source IP address
-        if protocol != "ICMP":
+        if protocol != "icmp":
           ext_port_tmp = struct.unpack('!H',pkt[tl_index:tl_index+2])[0]
         # Retrieve the source IP address and source port of the packet
       else: # pkt_dir == PKT_DIR_OUTGOING
         ext_ip_tmp = pkt[16:20] # external IP address is destination IP address
-        if protocol != "ICMP":
+        if protocol != "icmp":
           ext_port_tmp = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
 
       # Packet is ICMP-type packet
-      if protocol == "ICMP":
+      if protocol == "icmp":
         ext_port_tmp = struct.unpack('!B',pkt[tl_index])[0] # Independent of pkt_dir value
 
       # Retrieve the string representation of the external IP address of a packet
@@ -107,7 +107,7 @@ class Firewall:
       domain_name = None
       dst_port = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
 
-      if protocol == "UDP" and dst_port == 53:
+      if protocol == "udp" and dst_port == 53:
         # Check to see if there is exactly one DNS question entry
         # Application layer starts at index = tl_index + 8
         al_index = tl_index + 8
