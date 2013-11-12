@@ -159,12 +159,9 @@ class Firewall:
       verdict = "pass"
 
       for rule in self.rules:
-        print rule.protocol, wrapped_packet.protocol
         if rule.protocol == wrapped_packet.protocol:
-          print "YAY"
           # Examine rule further since rule protocol matches packet protocol (TCP/UDP/ICMP)
           if wrapped_packet.ext_IP_address == rule.ext_IP_address and wrapped_packet.ext_port == rule.ext_port:
-            print "GO"
             verdict = rule.verdict
         elif rule.protocol == "dns" and wrapped_packet.check_dns_rules:
           # Examine rule further since check_dns_rules indicates that a packet should be checked against DNS rules
@@ -317,7 +314,6 @@ class IPAddressField:
   # of the packet, while the rhs is always the external Ip addr of the
   # rule that you're trying to match up with the packet
   def __eq__(self, other):
-    print self.ext_IP_address, other.ext_IP_address
     if other.ext_IP_address == "any":
       return True
     elif len(other.ext_IP_address) == 2:
@@ -325,7 +321,7 @@ class IPAddressField:
       return belongs_to_country(self.ext_IP_address, other.ext_IP_address)
     elif other.is_IP_prefix:
       # TODO: Deal with IP prefix case
-      decimal_ip = ip_to_int(self.ext_IP_address)
+      decimal_ip = self.ip_to_int(self.ext_IP_address)
       return self.relevant_ip_portion(decimal_ip, other.slash_num) == other.relevant_portion
     else:
       # other.ext_IP_address is just an IP address
