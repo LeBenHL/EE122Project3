@@ -39,8 +39,12 @@ class Firewall:
         if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
           pass
         else:
-          protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, ok_header_len = self.read_packet(pkt, pkt_dir)
-          if (!ok_header_len):
+          try:
+            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet = self.read_packet(pkt, pkt_dir)
+          except IndexError as e:
+            print "This is a malformed packet!! Bad!"
+            is_bad_packet = True # is_bad_packet is also set to True for a certain case involving header length in self.read_packet
+          if (!is_bad_packet):
             return
           wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
@@ -72,10 +76,10 @@ class Firewall:
       header_len = header_len_tmp & 0x0F
       if header_len < 5:
         # Check additional specs to see that packets with header length < 5 should be dropped.
-        ok_header_len = False
+        is_bad_packet = False
       else: # header_len >= 5
         tl_index = header_len*4
-        ok_header_len = True
+        is_bad_packet = True
 
       if pkt_dir == PKT_DIR_INCOMING:
         ext_ip_tmp = pkt[12:16] # external IP address is source IP address
@@ -128,7 +132,7 @@ class Firewall:
           if ((QTYPE == 1 or QTYPE == 28) and QCLASS == 1):
             check_dns_rules = True
 
-      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, ok_header_len
+      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet
 
     # Plz write this for me Ben
     # Given a list
