@@ -128,7 +128,7 @@ class Firewall:
           len_byte_index += 1
 
           # Converts the list list_of_domain_parts to a string domain name
-          domain_name = self.parse_domain_name(list_of_domain_parts)
+          domain_name = self.parse_domain_name(list_of_domain_parts).lower()
 
           # len_byte_index now represents the starting index of QTYPE
           QTYPE = struct.unpack('!H',pkt[len_byte_index:len_byte_index+2])[0]
