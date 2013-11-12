@@ -125,14 +125,14 @@ class Firewall:
             len_byte_index = len_byte_index+length_byte+1
             length_byte = struct.unpack('!B', pkt[len_byte_index])[0]
 
+          len_byte_index += 1
+
           # Converts the list list_of_domain_parts to a string domain name
           domain_name = self.parse_domain_name(list_of_domain_parts)
 
           # len_byte_index now represents the starting index of QTYPE
           QTYPE = struct.unpack('!H',pkt[len_byte_index:len_byte_index+2])[0]
           QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
-          print QTYPE
-          print QCLASS
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
 
@@ -399,7 +399,8 @@ class DomainNameField:
     # self.rev_domain_name_list is the result of a string split into
     # multiple elements by the . delimiter, followed by a reverse oper.
     # that reverses the elements in the list
-    self.rev_domain_name_list = reversed(self._intermediate_list)
+    self.rev_domain_name_list = self._intermediate_list
+    self.rev_domain_name_list.reverse()
 
   # Assume that the lhs of "==" is always the domain name
   # of the packet, while the rhs is always the domain name of
@@ -414,8 +415,6 @@ class DomainNameField:
         # partURL is a portion of a url like "gov" or "fda"
         if partURL != self.rev_domain_name_list[i]:
           return False
-    # Should never reach this part
-    raise Exception("WTF WE FUCKED UP")
-
+    return True
 
 # TODO: You may want to add more classes/functions as well.
