@@ -117,7 +117,12 @@ class Firewall:
           length_byte = struct.unpack('!B',pkt[len_byte_index])[0]
           list_of_domain_parts = []
           while (length_byte != 0):
-            tuple_of_ascii_char = struct.unpack('!B',pkt[len_byte_index+1:len_byte_index+length_byte+1])
+            tuple_of_ascii_char = ()
+            i = 0
+            while length_byte > 0:
+              tuple_of_ascii_char += struct.unpack('!B',pkt[len_byte_index+1 + i])
+              length_byte = length_byte - 1
+              i = i + 1
             list_of_domain_parts.append(tuple_of_ascii_char)
             len_byte_index = len_byte_index+length_byte+1
             length_byte = struct.unpack('!B', pkt[len_byte_index])[0]
