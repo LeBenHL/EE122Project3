@@ -39,22 +39,22 @@ class Firewall:
         if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
           pass
         else:
-          try:
-            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet = self.read_packet(pkt, pkt_dir)
-          except IndexError as e:
-            print "This is a malformed packet!! Bad!"
-            is_bad_packet = True # is_bad_packet is also set to True for a certain case involving header length in self.read_packet
-          if not is_bad_packet:
-            return
+          protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet = self.read_packet(pkt, pkt_dir)
           wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
           verdict = self.packet_lookup(wrapped_packet)
+
+          if pkt_dir == PKT_DIR_INCOMING:
+            print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+          else:
+            print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
 
           if verdict == "pass":
             if pkt_dir == PKT_DIR_INCOMING:
               self.iface_int.send_ip_packet(pkt)
             else: # pkt_dir == PKT_DIR_OUTGOING
               self.iface_ext.send_ip_packet(pkt)
+
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
@@ -116,24 +116,23 @@ class Firewall:
           len_byte_index = al_index+12
           length_byte = struct.unpack('!B',pkt[len_byte_index])[0]
           list_of_domain_parts = []
-          while (length_byte != 0):
-            tuple_of_ascii_char = ()
-            i = 0
-            while length_byte > 0:
-              tuple_of_ascii_char += struct.unpack('!B',pkt[len_byte_index+1 + i])
-              length_byte = length_byte - 1
-              i = i + 1
-            list_of_domain_parts.append(tuple_of_ascii_char)
+          while length_byte != 0:
+            list_of_ascii_char = []
+            ascii_chars = pkt[len_byte_index+1:len_byte_index+1+length_byte]
+            for ascii_char in ascii_chars:
+              list_of_ascii_char.append(struct.unpack('!B', ascii_char)[0])
+            list_of_domain_parts.append(list_of_ascii_char)
             len_byte_index = len_byte_index+length_byte+1
             length_byte = struct.unpack('!B', pkt[len_byte_index])[0]
 
           # Converts the list list_of_domain_parts to a string domain name
-          domain_name = parse_domain_name(list_of_domain_parts)
+          domain_name = self.parse_domain_name(list_of_domain_parts)
 
           # len_byte_index now represents the starting index of QTYPE
           QTYPE = struct.unpack('!H',pkt[len_byte_index:len_byte_index+2])[0]
           QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
-
+          print QTYPE
+          print QCLASS
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
 
@@ -143,7 +142,7 @@ class Firewall:
     # Given a list
     # [(0x77, 0x77, 0x77), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65), (0x63, 0x6f, 0x6d)]
     # return "www.google.com"
-    def parse_domain_name(list_of_domain_parts):
+    def parse_domain_name(self, list_of_domain_parts):
       domain_parts = []
       for domain_part in list_of_domain_parts:
         domain_parts.append(bytearray(domain_part).decode('ascii').encode('ascii'))
@@ -157,7 +156,7 @@ class Firewall:
 
       # Set verdict initially to true so that if no rules match packet fields
       # then the packet will be passed to the appropriate interface
-      verdict = True
+      verdict = "pass"
 
       for rule in self.rules:
         if rule.protocol == wrapped_packet.protocol:
