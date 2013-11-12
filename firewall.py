@@ -69,7 +69,7 @@ class Firewall:
         protocol = "UDP"
 
       header_len_tmp = struct.unpack('!B',pkt[0])[0]
-      header_len = header_len_tmp & 0xFF
+      header_len = header_len_tmp & 0x0F
       if header_len < 5:
         # Check additional specs to see that packets with header length < 5 should be dropped.
         ok_header_len = False
