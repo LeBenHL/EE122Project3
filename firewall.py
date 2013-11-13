@@ -11,6 +11,10 @@ import random
 # You must NOT use any 3rd-party libraries, though.
 
 class Firewall:
+
+    class MalformedPacketException(Exception):
+      pass
+
     def __init__(self, config, timer, iface_int, iface_ext):
         self.timer = timer
         self.iface_int = iface_int
@@ -34,27 +38,31 @@ class Firewall:
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
-        # TODO: Your main firewall code will be here.
         #Lossy Firewall
         if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
           pass
         else:
-          protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet = self.read_packet(pkt, pkt_dir)
-          wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
+          #TODO Try Catch 
+          try:
+            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name = self.read_packet(pkt, pkt_dir)
+            wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
-          verdict = self.packet_lookup(wrapped_packet)
+            verdict = self.packet_lookup(wrapped_packet)
 
-          if pkt_dir == PKT_DIR_INCOMING:
-            print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
-          else:
-            print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
-
-          if verdict == "pass":
             if pkt_dir == PKT_DIR_INCOMING:
-              self.iface_int.send_ip_packet(pkt)
-            else: # pkt_dir == PKT_DIR_OUTGOING
-              self.iface_ext.send_ip_packet(pkt)
+              print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+            else:
+              print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
 
+            if verdict == "pass":
+              if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send_ip_packet(pkt)
+              else: # pkt_dir == PKT_DIR_OUTGOING
+                self.iface_ext.send_ip_packet(pkt)
+          except IndexError as e:
+            pass
+          except MalformedPacketException as e:
+            pass
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
@@ -69,47 +77,45 @@ class Firewall:
         protocol = "icmp"
       elif protocol_tmp == 6:
         protocol = "tcp"
-      else: # protocol_tmp == 17
+      elif protocol_tmp == 17:
         protocol = "udp"
+      else:
+        #Not a Protocol we recognize, should we just drop?
+        return (None, None, None, None, None)
 
       header_len_tmp = struct.unpack('!B',pkt[0])[0]
       header_len = header_len_tmp & 0x0F
       if header_len < 5:
         # Check additional specs to see that packets with header length < 5 should be dropped.
-        is_bad_packet = False
+        raise MalformedPacketException("Header Length Less than 5")
       else: # header_len >= 5
         tl_index = header_len*4
-        is_bad_packet = True
 
       if pkt_dir == PKT_DIR_INCOMING:
         ext_ip_tmp = pkt[12:16] # external IP address is source IP address
-        if protocol != "icmp":
-          ext_port_tmp = struct.unpack('!H',pkt[tl_index:tl_index+2])[0]
+        if protocol == "tcp" or protocol =="udp":
+          ext_port = struct.unpack('!H',pkt[tl_index:tl_index+2])[0]
         # Retrieve the source IP address and source port of the packet
       else: # pkt_dir == PKT_DIR_OUTGOING
         ext_ip_tmp = pkt[16:20] # external IP address is destination IP address
-        if protocol != "icmp":
-          ext_port_tmp = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
+        if protocol == "tcp" or protocol == "udp":
+          ext_port = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
 
       # Packet is ICMP-type packet
       if protocol == "icmp":
-        ext_port_tmp = struct.unpack('!B',pkt[tl_index])[0] # Independent of pkt_dir value
+        ext_port = struct.unpack('!B',pkt[tl_index])[0] # Independent of pkt_dir value
 
       # Retrieve the string representation of the external IP address of a packet
       ext_IP_address = socket.inet_ntoa(ext_ip_tmp)
-
-      # Retrieve the string representation of the external port of a packet
-      ext_port = str(ext_port_tmp)
 
       # check_dns_rules determines whether or not a packet should be considered
       # for DNS rule matching. Initially set to False unless can prove otherwise.
       check_dns_rules = False
       domain_name = None
-      dst_port = struct.unpack('!H',pkt[tl_index+2:tl_index+4])[0]
 
-      if protocol == "udp" and dst_port == 53:
+      if pkt_dir == PKT_DIR_OUTGOING and protocol == "udp" and ext_port == 53:
         # Check to see if there is exactly one DNS question entry
-        # Application layer starts at index = tl_index + 8
+        # Application layer starts at index = tl_index + 8 for UDP
         al_index = tl_index + 8
         QDCOUNT = struct.unpack('!H',pkt[al_index+4:al_index+6])[0]
         if QDCOUNT == 1:
@@ -136,9 +142,8 @@ class Firewall:
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
 
-      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, is_bad_packet
+      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name
 
-    # Plz write this for me Ben
     # Given a list
     # [(0x77, 0x77, 0x77), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65), (0x63, 0x6f, 0x6d)]
     # return "www.google.com"
@@ -320,12 +325,11 @@ class IPAddressField:
       # other.ext_IP_address is a 2-byte country code
       return belongs_to_country(self.ext_IP_address, other.ext_IP_address)
     elif other.is_IP_prefix:
-      # TODO: Deal with IP prefix case
       decimal_ip = self.ip_to_int(self.ext_IP_address)
       return self.relevant_ip_portion(decimal_ip, other.slash_num) == other.relevant_portion
     else:
       # other.ext_IP_address is just an IP address
-      return self.ext_IP_address == other.ext_IP_address
+      return self.ip_to_int(self.ext_IP_address) == self.ip_to_int(other.ext_IP_address)
 
   #Returns True if the given ip belongs to a certain country. False o/w
   def belongs_to_country(self, ip, country_code):
@@ -363,13 +367,17 @@ class IPAddressField:
 class ExtPortField:
 
   def __init__(self, ext_port):
-    self.ext_port = ext_port
-    self.is_a_range = False
-    if "-" in self.ext_port:
-      self.is_a_range = true
-      self._temp_list = self.ext_port.split("-")
-      self.start_port = int(self._temp_list[0])
-      self.end_port = int(self._temp_list[1])
+    if self.is_integer(ext_port):
+      self.ext_port = int(ext_port)
+      self.is_a_range = False
+    else:
+      self.ext_port = ext_port
+      self.is_a_range = False
+      if "-" in self.ext_port:
+        self.is_a_range = True
+        self._temp_list = self.ext_port.split("-")
+        self.start_port = int(self._temp_list[0])
+        self.end_port = int(self._temp_list[1])
 
   # Assume that the lhs of "==" is always the external port
   # of the packet, while the rhs is always the external port of the
@@ -378,28 +386,27 @@ class ExtPortField:
     if other.ext_port == "any":
       return True
     elif other.is_a_range:
-      ext_port_as_int = int(self.ext_port)
-      return ext_port_as_int >= other.start_port and ext_port_as_int <= other.end_port
+      return self.ext_port >= other.start_port and self.ext_port <= other.end_port
     else:
       # other.ext_port should be a single value
       return self.ext_port == other.ext_port
 
-  def _is_integer(self, ext_port):
+  def is_integer(self, val):
     try:
-      int(ext_port)
+      int(val)
       return True
     except ValueError:
       return False
+
 
 class DomainNameField:
 
   def __init__(self, domain_name):
     self._domain_name = domain_name
-    self._intermediate_list = self._domain_name.split(".")
+    self.rev_domain_name_list = self._domain_name.split(".")
     # self.rev_domain_name_list is the result of a string split into
     # multiple elements by the . delimiter, followed by a reverse oper.
     # that reverses the elements in the list
-    self.rev_domain_name_list = self._intermediate_list
     self.rev_domain_name_list.reverse()
 
   # Assume that the lhs of "==" is always the domain name
@@ -415,6 +422,7 @@ class DomainNameField:
         # partURL is a portion of a url like "gov" or "fda"
         if partURL != self.rev_domain_name_list[i]:
           return False
-    return True
+
+    return len(self.rev_domain_name_list) == len(other.rev_domain_name_list)
 
 # TODO: You may want to add more classes/functions as well.
