@@ -9,11 +9,10 @@ import random
 # TODO: Feel free to import any Python standard modules as necessary.
 # (http://docs.python.org/2/library/)
 # You must NOT use any 3rd-party libraries, though.
+class MalformedPacketException(Exception):
+  pass
 
 class Firewall:
-
-    class MalformedPacketException(Exception):
-      pass
 
     def __init__(self, config, timer, iface_int, iface_ext):
         self.timer = timer
@@ -323,7 +322,7 @@ class IPAddressField:
       return True
     elif len(other.ext_IP_address) == 2:
       # other.ext_IP_address is a 2-byte country code
-      return belongs_to_country(self.ext_IP_address, other.ext_IP_address)
+      return self.belongs_to_country(self.ext_IP_address, other.ext_IP_address)
     elif other.is_IP_prefix:
       decimal_ip = self.ip_to_int(self.ext_IP_address)
       return self.relevant_ip_portion(decimal_ip, other.slash_num) == other.relevant_portion
