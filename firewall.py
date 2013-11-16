@@ -49,9 +49,11 @@ class Firewall:
             verdict = self.packet_lookup(wrapped_packet)
 
             if pkt_dir == PKT_DIR_INCOMING:
-              print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+              #print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+              pass
             else:
-              print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+              #print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+              pass
 
             if verdict == "pass":
               if pkt_dir == PKT_DIR_INCOMING:
