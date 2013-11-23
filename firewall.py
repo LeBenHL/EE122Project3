@@ -37,6 +37,8 @@ class Firewall:
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
+
+        # TODO: need to add support for log http <host name>
         #Lossy Firewall
         if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
           pass
@@ -60,10 +62,26 @@ class Firewall:
                 self.iface_int.send_ip_packet(pkt)
               else: # pkt_dir == PKT_DIR_OUTGOING
                 self.iface_ext.send_ip_packet(pkt)
+            elif verdict == "deny":
+              if protocol == "tcp":
+                self.handle_deny_tcp(ext_IP_address, port)
+              else:
+                self.handle_deny_dns(domain_name)
+            elif verdict == "log":
+              pass
+            elif verdict == "drop":
+              #Do Nothing to just drop it
+              pass
           except IndexError as e:
             pass
           except MalformedPacketException as e:
             pass
+
+    def handle_deny_tcp(self, ext_IP_address, port):
+      pass
+
+    def handle_deny_dns(self, domain):
+      pass
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
