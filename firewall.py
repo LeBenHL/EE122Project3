@@ -80,12 +80,14 @@ class Firewall:
               pass
           except IndexError as e:
             pass
+            print e
           except MalformedPacketException as e:
             pass
 
     def respond_to_traceroute(self, pkt):
       #GET TTL Value
       TTL = struct.unpack("!B", pkt[8:9])[0]
+      print TTL
 
       source = self.traceroute_sources[TTL]
       print source
