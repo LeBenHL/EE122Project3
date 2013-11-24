@@ -149,7 +149,7 @@ class Firewall:
 
       LENGTH = struct.pack('!H', 8 + len(app_data))
 
-      summation = self.generate_sum(self, transport_section + app_data)
+      summation = self.generate_sum(self, SOURCE_PORT + DESTINATION_PORT + LENGTH + app_data)
 
       #Add Psuedo Header to Summation
       summation += struct.unpack('!H', ip_section[12:14])[0] 
