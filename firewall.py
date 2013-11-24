@@ -94,24 +94,17 @@ class Firewall:
         TYPE = chr(3)
         CODE = chr(3)
 
-        IDENTIFIER = struct.pack("!H", 0)
-        SEQ_NO = struct.pack("!H", 0)
-
-        CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + IDENTIFIER + SEQ_NO))
-
-        ICMP_DATA = TYPE + CODE + CHECKSUM + IDENTIFIER + SEQ_NO
-
       else:
         TYPE = chr(11)
         CODE = chr(0)
 
-        UNUSED = struct.pack("!L", 0)
+      UNUSED = struct.pack("!L", 0)
 
-        IP_HEADER_PLUS_DATA = ip_section + transport_section[:8]
+      IP_HEADER_PLUS_DATA = ip_section + transport_section[:8]
 
-        CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + UNUSED + IP_HEADER_PLUS_DATA))
+      CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + UNUSED + IP_HEADER_PLUS_DATA))
 
-        ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
+      ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
 
       IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=socket.inet_aton(source), protocol=chr(1))
 
