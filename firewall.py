@@ -88,6 +88,7 @@ class Firewall:
       TTL = struct.unpack("!B", pkt[8:9])[0]
 
       source = self.traceroute_sources[TTL]
+      print source
 
       if source == "192.168.122.122":
         TYPE = chr(0)
