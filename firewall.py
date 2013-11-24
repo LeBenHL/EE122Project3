@@ -19,6 +19,8 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
+        self.traceroute_sources = {1: "192.168.122.1", 2: "192.168.122.1", 3: "192.168.122.122"}
+
         try:
             self.lossy = True
             self.loss_percentage = float(config['loss'])
@@ -59,7 +61,11 @@ class Firewall:
 
             if verdict == "pass":
               if pkt_dir == PKT_DIR_INCOMING:
-                self.iface_int.send_ip_packet(pkt)
+                #TRACEROUTE 192.168.122.122!
+                if protocol == "icmp" and ext_IP_address == "192.168.122.122" and ext_port == 8:
+                  self.respond_to_traceroute(pkt)
+                else:
+                  self.iface_int.send_ip_packet(pkt)
               else: # pkt_dir == PKT_DIR_OUTGOING
                 self.iface_ext.send_ip_packet(pkt)
             elif verdict == "deny":
@@ -77,11 +83,45 @@ class Firewall:
           except MalformedPacketException as e:
             pass
 
+    def respond_to_traceroute(pkt):
+      #GET TTL Value
+      TTL = struct.unpack("!B", pkt[8:9])[0]
+
+      source = self.traceroute_sources[TTL]
+
+      if source == "192.168.122.122":
+        TYPE = chr(0)
+        CODE = chr(0)
+
+        IDENTIFIER = struct.unpack("!H", 0)
+        SEQ_NO = struct.unpack("!H", 0)
+
+        CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + IDENTIFIER + SEQ_NO))
+
+        ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
+
+      else:
+        TYPE = chr(11)
+        CODE = chr(0)
+
+        UNUSED = struct.unpack("!L", 0)
+
+        ip_section, transport_section, app_section = self.split_by_layers(pkt)
+        IP_HEADER_PLUS_DATA = ip_section + app_section[:8]
+
+        CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + UNUSED + IP_HEADER_PLUS_DATA))
+
+        ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
+
+      IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=source)
+
+      self.iface_int.send_ip_packet(ICMP_DATA)
+
     def handle_deny_tcp(self, ext_IP_address, port):
       pass
 
+
     def handle_deny_dns(self, domain_name, pkt):
-      #BENS
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
       #Generate DNS response from the app_section data
@@ -199,7 +239,7 @@ class Firewall:
 
       return struct.pack('!H', ~summation & 0xFFFF)
 
-    def generate_IP_header(self, ip_section, payload):
+    def generate_IP_header(self, ip_section, payload, source=None, dest=None):
       #Generate an return IP header by taking the original ip header minus options and updating the
       #IP Header Length, Total Length, Checksum, Src and Dest Fields
      
@@ -208,9 +248,12 @@ class Firewall:
       TOTAL_LENGTH = struct.pack('!H', len(payload) + 20)
       IDENTIFICATION_TO_PROTOCOL = ip_section[4:10]
 
-      #Reverse Source and Destination
-      source = ip_section[12:16]
-      dest = ip_section[16:20]
+      #Reverse Source and Destination if source or dest not specificed
+      if source is None:
+        source = ip_section[12:16]
+
+      if dest is None:
+        dest = ip_section[16:20]
       SOURCE = dest
       DEST = source
 
