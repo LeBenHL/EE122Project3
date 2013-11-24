@@ -117,7 +117,7 @@ class Firewall:
 
         ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
 
-      IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=source)
+      IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=socket.inet_aton(source))
 
       self.iface_int.send_ip_packet(ICMP_DATA)
 
