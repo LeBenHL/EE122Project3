@@ -254,12 +254,14 @@ class Firewall:
 
       #Reverse Source and Destination if source or dest not specificed
       if source is None:
-        source = ip_section[12:16]
+        SOURCE = ip_section[16:20]
+      else:
+        SOURCE = source
 
       if dest is None:
-        dest = ip_section[16:20]
-      SOURCE = dest
-      DEST = source
+        DEST = ip_section[12:16]
+      else:
+        DEST = dest
 
       summation = self.calculate_sum(VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_PROTOCOL + SOURCE + DEST)
 
