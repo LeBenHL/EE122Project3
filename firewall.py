@@ -82,7 +82,7 @@ class Firewall:
 
     def handle_deny_dns(self, domain_name, pkt):
       #BENS
-      ip_section, transport_section, app_section = self.split_by_layers(packet)
+      ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
       #Generate DNS response from the app_section data
       app_data = self.generate_DNS_response(app_section, domain_name)
@@ -125,6 +125,18 @@ class Firewall:
 
     def generate_DNS_response(self, app_section, domain_name):
       #Generates a DNS response to the question
+
+      #Generate Header
+      ID = app_section[0:2]
+      QR_TO_RCODE = struct.pack('!H', 0b1000010000000000)
+      QDCOUNT = struct.pack('!H', 0)
+      ANCOUNT = struct.pack('!H', 1)
+      NSCOUNT = struct.pack('!H', 0)
+      ARCOUNT = struct.pack('!H', 0)
+
+      HEADER = ID + QR_TO_RCODE + QDCOUNT + ANCOUNT + NSCOUNT + ARCOUNT
+
+      #Generate Answer Section
       NAME = ""
       list_of_domain_parts = domain_name.split('.')
       for domain_part in list_of_domain_parts: 
@@ -133,13 +145,13 @@ class Firewall:
 
       TYPE = struct.pack("!H", 0x0001)
       CLASS = struct.pack("!H", 0x0001)
-      TTL = struct.pack("!H", 0x0001)
+      TTL = struct.pack("!L", 0x00000001)
       RDATA = socket.inet_aton("169.229.49.109")
       RDLENGTH = struct.pack('!H', len(RDATA))
 
-      ANSWER = NAME + TYPE + CLASS + TTL + RDATA + RDLENGTH
+      ANSWER = NAME + TYPE + CLASS + TTL + RDLENGTH + RDATA
 
-      return app_section + ANSWER
+      return HEADER + ANSWER
 
     def generate_UDP_header(self, ip_section, transport_section, app_data):
       #Reverse Src/Dest from original transport section
@@ -149,7 +161,7 @@ class Firewall:
 
       LENGTH = struct.pack('!H', 8 + len(app_data))
 
-      summation = self.generate_sum(self, SOURCE_PORT + DESTINATION_PORT + LENGTH + app_data)
+      summation = self.calculate_sum(SOURCE_PORT + DESTINATION_PORT + LENGTH + app_data)
 
       #Add Psuedo Header to Summation
       summation += struct.unpack('!H', ip_section[12:14])[0] 
@@ -171,7 +183,7 @@ class Firewall:
       index = 0
 
       while bytes_left > 1:
-        summation += struck.unpack('!H', data[index:index+2])[0]
+        summation += struct.unpack('!H', data[index:index+2])[0]
         bytes_left -= 2
         index += 2
 
@@ -183,36 +195,30 @@ class Firewall:
     def calculate_checksum(self, summation):
       #Calculates a checksum from the given summation
       #Pseudo Code from http://www.bloof.de/tcp_checksumming
-      summation = (summation >> 16) + (summation & 0xFFFF);
-      summation += (summation >> 16);
+      summation = (summation >> 16) + (summation & 0xFFFF)
 
-      return struct.pack('!H', ~summation)
+      return struct.pack('!H', ~summation & 0xFFFF)
 
     def generate_IP_header(self, ip_section, payload):
       #Generate an return IP header by taking the original ip header minus options and updating the
       #IP Header Length, Total Length, Checksum, Src and Dest Fields
-      IP_header = pkt[0:20]
-
-      #Set Total Length to 
+     
+      VERSION_AND_HEADER_LENGTH = chr((4 << 4) + 5)
+      TOS = chr(0)
+      TOTAL_LENGTH = struct.pack('!H', len(payload) + 20)
+      IDENTIFICATION_TO_PROTOCOL = ip_section[4:10]
 
       #Reverse Source and Destination
-      source = pkt[12:16]
-      dest = pkt[16:20]
-      IP_header[12:16] = dest
-      IP_header[16:20] = source
+      source = ip_section[12:16]
+      dest = ip_section[16:20]
+      SOURCE = dest
+      DEST = source
 
-      #Change IP Header Length to 5
-      IP_header[0] = chr(4 << 4 + 5)
+      summation = self.calculate_sum(VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_PROTOCOL + SOURCE + DEST)
 
-      #Change Total Length
-      IP_header[2:4] = struct.pack('!H', len(payload) + 20)
+      CHECKSUM = self.calculate_checksum(summation)
 
-      #Change Checksum
-      summation = self.calculate_sum(IP_header[0:10] + IP_header[12:20])
-
-      IP_header[10:12] = self.calculate_checksum(summation)
-
-      return IP_header
+      return VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_PROTOCOL + CHECKSUM + SOURCE + DEST
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
@@ -222,7 +228,6 @@ class Firewall:
 
       # Need to retrieve the protocol that the packet follows
       protocol_tmp = struct.unpack('!B',pkt[9])[0] # Protocol number corresponding to TCP/UDP/ICMP-type
-
       if protocol_tmp == 1:
         protocol = "icmp"
       elif protocol_tmp == 6:
