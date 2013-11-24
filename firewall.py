@@ -90,9 +90,9 @@ class Firewall:
       source = self.traceroute_sources[TTL]
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
-      if False:
-        TYPE = chr(0)
-        CODE = chr(0)
+      if source == "192.168.122.122":
+        TYPE = chr(3)
+        CODE = chr(3)
 
         IDENTIFIER = struct.pack("!H", 0)
         SEQ_NO = struct.pack("!H", 0)
