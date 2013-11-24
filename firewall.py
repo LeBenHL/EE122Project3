@@ -94,8 +94,8 @@ class Firewall:
         TYPE = chr(0)
         CODE = chr(0)
 
-        IDENTIFIER = struct.unpack("!H", 0)
-        SEQ_NO = struct.unpack("!H", 0)
+        IDENTIFIER = struct.pack("!H", 0)
+        SEQ_NO = struct.pack("!H", 0)
 
         CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + IDENTIFIER + SEQ_NO))
 
@@ -105,7 +105,7 @@ class Firewall:
         TYPE = chr(11)
         CODE = chr(0)
 
-        UNUSED = struct.unpack("!L", 0)
+        UNUSED = struct.pack("!L", 0)
 
         ip_section, transport_section, app_section = self.split_by_layers(pkt)
         IP_HEADER_PLUS_DATA = ip_section + app_section[:8]
