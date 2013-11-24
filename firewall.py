@@ -87,14 +87,10 @@ class Firewall:
     def respond_to_traceroute(self, pkt):
       #GET TTL Value
       TTL = struct.unpack("!B", pkt[8:9])[0]
-      print TTL
-
       source = self.traceroute_sources[TTL]
-      print source
-
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
-      if source == "192.168.122.122":
+      if False:
         TYPE = chr(0)
         CODE = chr(0)
 
