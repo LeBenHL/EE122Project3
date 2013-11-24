@@ -61,13 +61,13 @@ class Firewall:
 
             if verdict == "pass":
               if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send_ip_packet(pkt)
+              else: # pkt_dir == PKT_DIR_OUTGOING
                 #TRACEROUTE 192.168.122.122!
                 if protocol == "icmp" and ext_IP_address == "192.168.122.122" and ext_port == 8:
                   self.respond_to_traceroute(pkt)
                 else:
-                  self.iface_int.send_ip_packet(pkt)
-              else: # pkt_dir == PKT_DIR_OUTGOING
-                self.iface_ext.send_ip_packet(pkt)
+                  self.iface_ext.send_ip_packet(pkt)
             elif verdict == "deny":
               if protocol == "tcp":
                 self.handle_deny_tcp(ext_IP_address, port)
