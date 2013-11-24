@@ -66,7 +66,7 @@ class Firewall:
               if protocol == "tcp":
                 self.handle_deny_tcp(ext_IP_address, port)
               else:
-                self.handle_deny_dns(domain_name)
+                self.handle_deny_dns(domain_name, pkt)
             elif verdict == "log":
               pass
             elif verdict == "drop":
@@ -80,8 +80,139 @@ class Firewall:
     def handle_deny_tcp(self, ext_IP_address, port):
       pass
 
-    def handle_deny_dns(self, domain):
-      pass
+    def handle_deny_dns(self, domain_name, pkt):
+      #BENS
+      ip_section, transport_section, app_section = self.split_by_layers(packet)
+
+      #Generate DNS response from the app_section data
+      app_data = self.generate_DNS_response(app_section, domain_name)
+
+      #Generate UDP header from the transport_section data and the app data
+      transport_header = self.generate_UDP_header(ip_section, transport_section, app_data)
+
+      #Generate IP header from the ip_section and payload
+      ip_header = self.generate_IP_header(ip_section, transport_header + app_data)
+
+      #Send the Constructed Packet to INT Interface
+      self.iface_int.send_ip_packet(ip_header + transport_header + app_data)
+
+    def split_by_layers(self, pkt):
+      #Splits a packet into its relevant IP, Transport, and APP Layer Sections
+      header_len_tmp = struct.unpack('!B',pkt[0])[0]
+      header_len = header_len_tmp & 0x0F
+      if header_len < 5:
+        # Check additional specs to see that packets with header length < 5 should be dropped.
+        raise MalformedPacketException("Header Length Less than 5")
+      else: # header_len >= 5
+        tl_index = header_len*4
+
+      #Need to retrieve the protocol that the packet follows to find AL Index
+      protocol_tmp = struct.unpack('!B',pkt[9])[0] # Protocol number corresponding to TCP/UDP/ICMP-type
+
+      if protocol_tmp == 1:
+        #icmp
+        al_index = tl_index + 8
+      elif protocol_tmp == 6:
+        #TCP
+        tcp_header_len_tmp = struct.unpack('!B',pkt[tl_index + 12])[0]
+        tcp_header_len = (header_len_tmp & 0xF0) >> 4
+        al_index = tcp_header_len * 4
+      elif protocol_tmp == 17:
+        #UDP
+        al_index = tl_index + 8
+
+      return (pkt[:tl_index], pkt[tl_index:al_index], pkt[al_index:])
+
+    def generate_DNS_response(self, app_section, domain_name):
+      #Generates a DNS response to the question
+      NAME = ""
+      list_of_domain_parts = domain_name.split('.')
+      for domain_part in list_of_domain_parts: 
+        NAME += chr(len(domain_part)) + bytes(domain_part)
+      NAME += chr(0)
+
+      TYPE = struct.pack("!H", 0x0001)
+      CLASS = struct.pack("!H", 0x0001)
+      TTL = struct.pack("!H", 0x0001)
+      RDATA = socket.inet_aton("169.229.49.109")
+      RDLENGTH = struct.pack('!H', len(RDATA))
+
+      ANSWER = NAME + TYPE + CLASS + TTL + RDATA + RDLENGTH
+
+      return app_section + ANSWER
+
+    def generate_UDP_header(self, ip_section, transport_section, app_data):
+      #Reverse Src/Dest from original transport section
+      #Checksum pseudocode from http://www.bloof.de/tcp_checksumming
+      SOURCE_PORT = transport_section[2:4]
+      DESTINATION_PORT = transport_section[0:2]
+
+      LENGTH = struct.pack('!H', 8 + len(app_data))
+
+      summation = self.generate_sum(self, transport_section + app_data)
+
+      #Add Psuedo Header to Summation
+      summation += struct.unpack('!H', ip_section[12:14])[0] 
+      summation += struct.unpack('!H', ip_section[14:16])[0] 
+      summation += struct.unpack('!H', ip_section[16:18])[0] 
+      summation += struct.unpack('!H', ip_section[18:20])[0] 
+      summation += 8 + len(app_data)
+      summation += 17
+
+      CHECKSUM = self.calculate_checksum(summation)
+
+      return SOURCE_PORT + DESTINATION_PORT + LENGTH + CHECKSUM
+
+    def calculate_sum(self, data):
+      #Calculates a sum from the given data to be used in a checksum later
+      #Pseudo Code from http://www.bloof.de/tcp_checksumming
+      summation = 0
+      bytes_left = len(data)
+      index = 0
+
+      while bytes_left > 1:
+        summation += struck.unpack('!H', data[index:index+2])[0]
+        bytes_left -= 2
+        index += 2
+
+      if bytes_left > 1:
+        summation += struck.unpack('!B', data[index:index+1])[0] << 8
+
+      return summation
+
+    def calculate_checksum(self, summation):
+      #Calculates a checksum from the given summation
+      #Pseudo Code from http://www.bloof.de/tcp_checksumming
+      summation = (summation >> 16) + (summation & 0xFFFF);
+      summation += (summation >> 16);
+
+      return struct.pack('!H', ~summation)
+
+    def generate_IP_header(self, ip_section, payload):
+      #Generate an return IP header by taking the original ip header minus options and updating the
+      #IP Header Length, Total Length, Checksum, Src and Dest Fields
+      IP_header = pkt[0:20]
+
+      #Set Total Length to 
+
+      #Reverse Source and Destination
+      source = pkt[12:16]
+      dest = pkt[16:20]
+      IP_header[12:16] = dest
+      IP_header[16:20] = source
+
+      #Change IP Header Length to 5
+      IP_header[0] = chr(4 << 4 + 5)
+
+      #Change Total Length
+      IP_header[2:4] = struct.pack('!H', len(payload) + 20)
+
+      #Change Checksum
+      summation = self.calculate_sum(IP_header[0:10] + IP_header[12:20])
+
+      IP_header[10:12] = self.calculate_checksum(summation)
+
+      return IP_header
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
