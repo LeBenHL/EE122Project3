@@ -49,6 +49,7 @@ class Firewall:
           try:
             protocol, ext_IP_address, ext_port, check_dns_rules, domain_name = self.read_packet(pkt, pkt_dir)
             wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
+            print protocol, ext_IP_address, ext_port
 
             verdict = self.packet_lookup(wrapped_packet)
 
@@ -64,7 +65,6 @@ class Firewall:
                 self.iface_int.send_ip_packet(pkt)
               else: # pkt_dir == PKT_DIR_OUTGOING
                 #TRACEROUTE 192.168.122.122!
-                print protocol, ext_IP_address, ext_port
                 if protocol == "icmp" and ext_IP_address == "192.168.122.122" and ext_port == 8:
                   self.respond_to_traceroute(pkt)
                 else:
