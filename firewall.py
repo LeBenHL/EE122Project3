@@ -99,7 +99,7 @@ class Firewall:
 
         CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + IDENTIFIER + SEQ_NO))
 
-        ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
+        ICMP_DATA = TYPE + CODE + CHECKSUM + IDENTIFIER + SEQ_NO
 
       else:
         TYPE = chr(11)
