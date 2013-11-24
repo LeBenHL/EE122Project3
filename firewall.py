@@ -119,7 +119,7 @@ class Firewall:
 
       IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=socket.inet_aton(source))
 
-      self.iface_int.send_ip_packet(ICMP_DATA)
+      self.iface_int.send_ip_packet(IP_HEADER + ICMP_DATA)
 
     def handle_deny_tcp(self, ext_IP_address, port):
       pass
