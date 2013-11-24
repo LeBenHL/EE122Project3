@@ -254,7 +254,7 @@ class Firewall:
 
       if protocol is None:
         PROTOCOL = ip_section[10]
-      else
+      else:
         PROTOCOL = protocol
 
       #Reverse Source and Destination if source or dest not specificed
