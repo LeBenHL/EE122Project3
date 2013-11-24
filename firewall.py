@@ -92,6 +92,8 @@ class Firewall:
       source = self.traceroute_sources[TTL]
       print source
 
+      ip_section, transport_section, app_section = self.split_by_layers(pkt)
+
       if source == "192.168.122.122":
         TYPE = chr(0)
         CODE = chr(0)
@@ -109,7 +111,6 @@ class Firewall:
 
         UNUSED = struct.pack("!L", 0)
 
-        ip_section, transport_section, app_section = self.split_by_layers(pkt)
         IP_HEADER_PLUS_DATA = ip_section + app_section[:8]
 
         CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + UNUSED + IP_HEADER_PLUS_DATA))
