@@ -64,6 +64,7 @@ class Firewall:
                 self.iface_int.send_ip_packet(pkt)
               else: # pkt_dir == PKT_DIR_OUTGOING
                 #TRACEROUTE 192.168.122.122!
+                print protocol, ext_IP_address, ext_port
                 if protocol == "icmp" and ext_IP_address == "192.168.122.122" and ext_port == 8:
                   self.respond_to_traceroute(pkt)
                 else:
