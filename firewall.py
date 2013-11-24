@@ -19,7 +19,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.traceroute_sources = {1: "192.168.122.1", 2: "192.168.122.1", 3: "192.168.122.122"}
+        self.traceroute_sources = {1: "192.168.122.1", 2: "192.168.122.2", 3: "192.168.122.122"}
 
         try:
             self.lossy = True
@@ -111,7 +111,7 @@ class Firewall:
 
         UNUSED = struct.pack("!L", 0)
 
-        IP_HEADER_PLUS_DATA = ip_section + app_section[:8]
+        IP_HEADER_PLUS_DATA = ip_section + transport_section[:8]
 
         CHECKSUM = self.calculate_checksum(self.calculate_sum(TYPE + CODE + UNUSED + IP_HEADER_PLUS_DATA))
 
