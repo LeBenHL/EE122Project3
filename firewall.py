@@ -49,7 +49,6 @@ class Firewall:
           try:
             protocol, ext_IP_address, ext_port, check_dns_rules, domain_name = self.read_packet(pkt, pkt_dir)
             wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
-            print protocol, ext_IP_address, ext_port
 
             verdict = self.packet_lookup(wrapped_packet)
 
@@ -84,7 +83,7 @@ class Firewall:
           except MalformedPacketException as e:
             pass
 
-    def respond_to_traceroute(pkt):
+    def respond_to_traceroute(self, pkt):
       #GET TTL Value
       TTL = struct.unpack("!B", pkt[8:9])[0]
 
