@@ -117,7 +117,7 @@ class Firewall:
 
         ICMP_DATA = TYPE + CODE + CHECKSUM + UNUSED + IP_HEADER_PLUS_DATA
 
-      IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=socket.inet_aton(source))
+      IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=socket.inet_aton(source), protocol=chr(1))
 
       self.iface_int.send_ip_packet(IP_HEADER + ICMP_DATA)
 
@@ -243,14 +243,19 @@ class Firewall:
 
       return struct.pack('!H', ~summation & 0xFFFF)
 
-    def generate_IP_header(self, ip_section, payload, source=None, dest=None):
+    def generate_IP_header(self, ip_section, payload, source=None, dest=None, protocol=None):
       #Generate an return IP header by taking the original ip header minus options and updating the
       #IP Header Length, Total Length, Checksum, Src and Dest Fields
      
       VERSION_AND_HEADER_LENGTH = chr((4 << 4) + 5)
       TOS = chr(0)
       TOTAL_LENGTH = struct.pack('!H', len(payload) + 20)
-      IDENTIFICATION_TO_PROTOCOL = ip_section[4:10]
+      IDENTIFICATION_TO_TTL = ip_section[4:9]
+
+      if protocol is None:
+        PROTOCOL = ip_section[10]
+      else
+        PROTOCOL = protocol
 
       #Reverse Source and Destination if source or dest not specificed
       if source is None:
@@ -263,11 +268,11 @@ class Firewall:
       else:
         DEST = dest
 
-      summation = self.calculate_sum(VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_PROTOCOL + SOURCE + DEST)
+      summation = self.calculate_sum(VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_TTL + PROTOCOL + SOURCE + DEST)
 
       CHECKSUM = self.calculate_checksum(summation)
 
-      return VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_PROTOCOL + CHECKSUM + SOURCE + DEST
+      return VERSION_AND_HEADER_LENGTH + TOS + TOTAL_LENGTH + IDENTIFICATION_TO_TTL + PROTOCOL + CHECKSUM + SOURCE + DEST
 
     # Acts as a parser for the packet
     # Returns the protocol, external IP address, and the external port associated with the packet
