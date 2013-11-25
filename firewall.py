@@ -19,7 +19,10 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.traceroute_sources = {1: "192.168.122.1", 2: "192.168.122.2", 3: "192.168.122.3", 4: "192.168.122.4", 5: "192.168.122.5", 6: "192.168.122.6", 7: "192.168.122.7", 8: "192.168.122.8", 9: "192.168.122.9", 10: "192.168.122.10", 11: "192.168.122.11", 12: "192.168.122.12", 13: "192.168.122.122"}
+        self.traceroute_sources = {1: "192.168.122.1", 2: "192.168.122.2", 3: "192.168.122.3", 4: "192.168.122.4", 5: "192.168.122.5", 6: "192.168.122.6", 7: "192.168.122.7", 
+          8: "192.168.122.8", 9: "192.168.122.9", 10: "192.168.122.10", 11: "192.168.122.11", 12: "192.168.122.12", 13: "192.168.122.122"}
+        self.reverse_dns_domains = {"192.168.122.1": "prepare.for.trouble", "192.168.122.2": "make.it.double", "192.168.122.3": "to.protect.the.world.from.devastation", "192.168.122.4": "to.unite.all.peoples.within.our.nation", 
+          "192.168.122.5": "to.denounce.the.evils.of.truth.and.love", "192.168.122.6": "to.extend.our.reach.to.the.stars.above", "192.168.122.7": "jessie", "192.168.122.8": "james", "192.168.122.9": "team.rocket.blast.off.at.the.speed.of.light", "192.168.122.10": "surrender.now.or.prepare.to.fight", "192.168.122.11": "meowth", "192.168.122.12": "thats.right", "192.168.122.122": "were.blasting.off.again"}
 
         try:
             self.lossy = True
@@ -47,7 +50,7 @@ class Firewall:
         else:
           #TODO Try Catch 
           try:
-            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name = self.read_packet(pkt, pkt_dir)
+            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, QTYPE = self.read_packet(pkt, pkt_dir)
             wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
 
             verdict = self.packet_lookup(wrapped_packet)
@@ -66,8 +69,25 @@ class Firewall:
                 #TRACEROUTE 192.168.122.122!
                 if protocol == "udp" and ext_IP_address == "192.168.122.122":
                   self.respond_to_traceroute(pkt)
-                elif:
-                  self.respond_to_reverse_dns()
+                elif protocol == "udp" and ext_port == 53 and QTYPE == 12:
+                  ip_to_lookup = self.parse_ip_to_lookup(domain_name)
+
+                  if ip_to_lookup.startswith("192.168.122"):
+                    ip_section, transport_section, app_section = self.split_by_layers(pkt)
+                    
+                    #Generate Reverse DNS response
+                    app_data = self.generate_reverse_DNS_response(app_section, domain_name, ip_to_lookup)
+
+                    #Generate UDP header from the transport_section data and the app data
+                    transport_header = self.generate_UDP_header(ip_section, transport_section, app_data)
+
+                    #Generate IP header from the ip_section and payload
+                    ip_header = self.generate_IP_header(ip_section, transport_header + app_data)
+
+                    #Send the Constructed Packet to INT Interface
+                    self.iface_int.send_ip_packet(ip_header + transport_header + app_data)
+                  else:
+                    self.iface_ext.send_ip_packet(pkt)
                 else:
                   self.iface_ext.send_ip_packet(pkt)
             elif verdict == "deny":
@@ -115,6 +135,54 @@ class Firewall:
       IP_HEADER = self.generate_IP_header(ip_section, ICMP_DATA, source=socket.inet_aton(source), protocol=chr(1))
 
       self.iface_int.send_ip_packet(IP_HEADER + ICMP_DATA)
+
+    def generate_reverse_DNS_response(self, app_section, domain_name, ip_to_lookup):
+      #Generate Reverse DNS response
+
+      #Generate Header
+      ID = app_section[0:2]
+      QR_TO_RCODE = struct.pack('!H', 0b1000000000000000)
+      QDCOUNT = struct.pack('!H', 1)
+      ANCOUNT = struct.pack('!H', 1)
+      NSCOUNT = struct.pack('!H', 0)
+      ARCOUNT = struct.pack('!H', 0)
+
+      HEADER = ID + QR_TO_RCODE + QDCOUNT + ANCOUNT + NSCOUNT + ARCOUNT
+
+      #Generate Question Section
+      QNAME = ""
+      list_of_domain_parts = domain_name.split('.')
+      for domain_part in list_of_domain_parts: 
+        QNAME += chr(len(domain_part)) + bytes(domain_part)
+      QNAME += chr(0)
+      QTYPE = struct.pack('!H', 0x000c)
+      QCLASS = struct.pack("!H", 0x0001)
+
+      QUESTION = QNAME + QTYPE + QCLASS
+
+      #Generate Answer Section
+      NAME = QNAME
+      TYPE = QTYPE
+      CLASS = QCLASS
+      TTL = struct.pack("!L", 0x00000001)
+      RDATA = ""
+      list_of_domain_parts = self.reverse_dns_domains[ip_to_lookup].split(".")
+      for domain_part in list_of_domain_parts: 
+        RDATA += chr(len(domain_part)) + bytes(domain_part)
+      RDATA += chr(0)
+      RDLENGTH = struct.pack('!H', len(RDATA))
+
+      ANSWER = NAME + TYPE + CLASS + TTL + RDLENGTH + RDATA
+
+      return HEADER + QUESTION + ANSWER
+
+    def parse_ip_to_lookup(self, domain_name):
+      parts = domain_name.split(".")
+
+      ip_parts = parts[0:4]
+      ip_parts.reverse()
+
+      return ".".join(ip_parts) 
 
     def handle_deny_tcp(self, ext_IP_address, port):
       pass
@@ -168,29 +236,35 @@ class Firewall:
       #Generate Header
       ID = app_section[0:2]
       QR_TO_RCODE = struct.pack('!H', 0b1000000000000000)
-      QDCOUNT = struct.pack('!H', 0)
+      QDCOUNT = struct.pack('!H', 1)
       ANCOUNT = struct.pack('!H', 1)
       NSCOUNT = struct.pack('!H', 0)
       ARCOUNT = struct.pack('!H', 0)
 
       HEADER = ID + QR_TO_RCODE + QDCOUNT + ANCOUNT + NSCOUNT + ARCOUNT
 
-      #Generate Answer Section
-      NAME = ""
+      #Generate Question Section
+      QNAME = ""
       list_of_domain_parts = domain_name.split('.')
       for domain_part in list_of_domain_parts: 
-        NAME += chr(len(domain_part)) + bytes(domain_part)
-      NAME += chr(0)
+        QNAME += chr(len(domain_part)) + bytes(domain_part)
+      QNAME += chr(0)
+      QTYPE = struct.pack('!H', 0x0001)
+      QCLASS = struct.pack("!H", 0x0001)
 
-      TYPE = struct.pack("!H", 0x0001)
-      CLASS = struct.pack("!H", 0x0001)
+      QUESTION = QNAME + QTYPE + QCLASS
+
+      #Generate Answer Section
+      NAME = QNAME
+      TYPE = QTYPE
+      CLASS = QCLASS
       TTL = struct.pack("!L", 0x00000001)
       RDATA = socket.inet_aton("169.229.49.109")
       RDLENGTH = struct.pack('!H', len(RDATA))
 
       ANSWER = NAME + TYPE + CLASS + TTL + RDLENGTH + RDATA
 
-      return HEADER + ANSWER
+      return HEADER + QUESTION + ANSWER
 
     def generate_UDP_header(self, ip_section, transport_section, app_data):
       #Reverse Src/Dest from original transport section
@@ -226,7 +300,7 @@ class Firewall:
         bytes_left -= 2
         index += 2
 
-      if bytes_left > 1:
+      if bytes_left > 0:
         summation += struck.unpack('!B', data[index:index+1])[0] << 8
 
       return summation
@@ -248,7 +322,7 @@ class Firewall:
       IDENTIFICATION_TO_TTL = ip_section[4:9]
 
       if protocol is None:
-        PROTOCOL = ip_section[10]
+        PROTOCOL = ip_section[9]
       else:
         PROTOCOL = protocol
 
@@ -316,6 +390,7 @@ class Firewall:
       # for DNS rule matching. Initially set to False unless can prove otherwise.
       check_dns_rules = False
       domain_name = None
+      QTYPE = None
 
       if pkt_dir == PKT_DIR_OUTGOING and protocol == "udp" and ext_port == 53:
         # Check to see if there is exactly one DNS question entry
@@ -346,7 +421,7 @@ class Firewall:
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
 
-      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name
+      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, QTYPE
 
     # Given a list
     # [(0x77, 0x77, 0x77), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65), (0x63, 0x6f, 0x6d)]
@@ -606,27 +681,15 @@ class ExtPortField:
 class DomainNameField:
 
   def __init__(self, domain_name):
-    self._domain_name = domain_name
-    self.rev_domain_name_list = self._domain_name.split(".")
-    # self.rev_domain_name_list is the result of a string split into
-    # multiple elements by the . delimiter, followed by a reverse oper.
-    # that reverses the elements in the list
-    self.rev_domain_name_list.reverse()
+    self.domain_name = domain_name
 
   # Assume that the lhs of "==" is always the domain name
   # of the packet, while the rhs is always the domain name of
   # the rule that you're trying to match up with the packet
   def __eq__(self, other):
-    for i, partURL in enumerate(other.rev_domain_name_list):
-      # Assume that DNS query rules only have good syntax
-      if partURL == "*":
-        # Since the current partURL is "*", do not care what the rest of self.rev_domain_name_list is
-        return True
-      else:
-        # partURL is a portion of a url like "gov" or "fda"
-        if partURL != self.rev_domain_name_list[i]:
-          return False
-
-    return len(self.rev_domain_name_list) == len(other.rev_domain_name_list)
+    if other.domain_name.startswith("*"):
+      return self.domain_name.endswith(other.domain_name[1:])
+    else:
+      return self.domain_name == other.domain_name
 
 # TODO: You may want to add more classes/functions as well.
