@@ -66,6 +66,8 @@ class Firewall:
                 #TRACEROUTE 192.168.122.122!
                 if protocol == "udp" and ext_IP_address == "192.168.122.122":
                   self.respond_to_traceroute(pkt)
+                elif:
+                  self.respond_to_reverse_dns()
                 else:
                   self.iface_ext.send_ip_packet(pkt)
             elif verdict == "deny":
