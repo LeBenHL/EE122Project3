@@ -300,7 +300,7 @@ class Firewall:
         bytes_left -= 2
         index += 2
 
-      if bytes_left > 1:
+      if bytes_left > 0:
         summation += struck.unpack('!B', data[index:index+1])[0] << 8
 
       return summation
