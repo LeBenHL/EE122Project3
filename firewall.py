@@ -141,7 +141,7 @@ class Firewall:
 
       #Generate Header
       ID = app_section[0:2]
-      QR_TO_RCODE = struct.pack('!H', 0b1001100000000000)
+      QR_TO_RCODE = struct.pack('!H', 0b1000000000000000)
       QDCOUNT = struct.pack('!H', 1)
       ANCOUNT = struct.pack('!H', 1)
       NSCOUNT = struct.pack('!H', 0)
@@ -235,7 +235,7 @@ class Firewall:
 
       #Generate Header
       ID = app_section[0:2]
-      QR_TO_RCODE = struct.pack('!H', 0b1001100000000000)
+      QR_TO_RCODE = struct.pack('!H', 0b1000000000000000)
       QDCOUNT = struct.pack('!H', 1)
       ANCOUNT = struct.pack('!H', 1)
       NSCOUNT = struct.pack('!H', 0)
