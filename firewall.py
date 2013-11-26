@@ -20,12 +20,18 @@ class Firewall:
         self.timer = timer
         self.iface_int = iface_int
         self.iface_ext = iface_ext
-        self.http_dict = dict()
 
+        #For traceroute XC
         self.traceroute_sources = {1: "192.168.122.1", 2: "192.168.122.2", 3: "192.168.122.3", 4: "192.168.122.4", 5: "192.168.122.5", 6: "192.168.122.6", 7: "192.168.122.7", 
           8: "192.168.122.8", 9: "192.168.122.9", 10: "192.168.122.10", 11: "192.168.122.11", 12: "192.168.122.12", 13: "192.168.122.122"}
         self.reverse_dns_domains = {"192.168.122.1": "prepare.for.trouble", "192.168.122.2": "make.it.double", "192.168.122.3": "to.protect.the.world.from.devastation", "192.168.122.4": "to.unite.all.peoples.within.our.nation", 
           "192.168.122.5": "to.denounce.the.evils.of.truth.and.love", "192.168.122.6": "to.extend.our.reach.to.the.stars.above", "192.168.122.7": "jessie", "192.168.122.8": "james", "192.168.122.9": "team.rocket.blast.off.at.the.speed.of.light", "192.168.122.10": "surrender.now.or.prepare.to.fight", "192.168.122.11": "meowth", "192.168.122.12": "thats.right", "192.168.122.122": "were.blasting.off.again"}
+
+        #For HTTP Logging
+
+        #Used to store HTTP Requests/Responses building them up from possibly fragmented packets
+        self.http_requests = dict()
+        self.http_responses = dict()
 
         try:
             self.lossy = True
@@ -99,7 +105,7 @@ class Firewall:
               else:
                 self.handle_deny_dns(domain_name, pkt)
             elif verdict == "log":
-              self.handle_log_http(pkt, pkt_dir, wrapped_packet)
+              self.handle_log_http(pkt, pkt_dir)
             elif verdict == "drop":
               #Do Nothing to just drop it
               pass
@@ -208,34 +214,14 @@ class Firewall:
     # 3. Also assumes that no data is attached to HTTP request/HTTP response so only header fields present
     # Unfortunately, all 3 assumptions are invalid :(
     # TODO: Also need to support read_packet setting a WrappedPacket's host_name and check_for_http_logging fields
-    def handle_log_http(self, pkt, pkt_dir, wrapped_packet):
+    def handle_log_http(self, pkt, pkt_dir):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
       if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
-        if wrapped_packet.domain_name not in http_dict:
-          # self.http_dict stores (key=host name, val=HTTP request app data)
-          self.http_dict[wrapped_packet.domain_name] = app_section
-        # Send the HTTP request packet to ext since only process HTTP request packet's app section when encounter corresponding HTTP reponse
-        self.iface_ext.send_ip_packet(pkt)
+        internal_port = struct.unpack("!H", transport_section[0:2])
+        
       else: # is a HTTP response
-        # Find the matching HTTP request app_section to go along with the corresponding HTTP response, with match by host names
-        # This part is invalid because it relies on assumptions (1), (2) above.
-        if wrapped_packet.domain_name in self.http_dict:
-          request_app_section = self.http_dict[domain_name]
-          response_app_section = app_section
-
-          # Return a string of the form
-          # "host_name method path version status_code object_size"
-          # with the two app sections + wrapped_packet external IP addr as input
-          http_log_line = self.generate_http_log_line(request_app_section, response_app_section, wrapped_packet.ext_IP_address)
-
-          # Takes in http log line (a string) as input and appends it to the http.log file
-          self.append_to_http_log(http_log_line)
-
-          del http_dict[domain_name]
-          self.iface_ext.send_ip_packet(pkt)
-        else:
-          self.iface_int.send_ip_packet(pkt)
-          raise MissingHTTPRequestException("Missing corresponding HTTP request")
+        internal_port = struct.unpack("!H", transport_section[2:4])
+        pass
 
     # app_section for HTTP request/reponse packets is just a plaintext string
     # so don't need to do struct.unpack
