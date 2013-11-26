@@ -44,16 +44,19 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
 
         # TODO: need to add support for log http <host name>
-        #Lossy Firewall
+        # Lossy Firewall
         if (self.lossy and self.loss_percentage > random.uniform(0, 100)):
           pass
+        # Deal with nonlossy stuff here
         else:
           try:
-            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, QTYPE = self.read_packet(pkt, pkt_dir)
-            wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name)
+            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name, QTYPE = self.read_packet(pkt, pkt_dir)
+            wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name)
 
+            # verdict can be either 'pass', 'drop', 'deny', or 'log'
             verdict = self.packet_lookup(wrapped_packet)
 
+            # Useful stuff for debugging
             if pkt_dir == PKT_DIR_INCOMING:
               #print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
               pass
@@ -90,6 +93,7 @@ class Firewall:
                 else:
                   self.iface_ext.send_ip_packet(pkt)
             elif verdict == "deny":
+              # either deny tcp or deny dns
               if protocol == "tcp":
                 self.handle_deny_tcp(pkt)
               else:
@@ -189,7 +193,8 @@ class Firewall:
     def handle_deny_tcp(self, pkt):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
-      #Generate TCP header from transport_section data; don't need app data
+      #Generate TCP header from transport_section data; don't need app_section
+      #Set RST flag = 1, set all other flags to 0
       transport_header = self.generate_TCP_header(ip_section, transport_section, set_rst=True)
 
       # Generate IP header from the ip_section and payload
@@ -198,48 +203,58 @@ class Firewall:
       #Send the Constructed Packet to EXT Interface
       self.iface_ext.send_ip_packet(ip_header + transport_header)
 
-    # def handle_log_http(self, pkt, pkt_dir, wrapped_packet):
-    #   ip_section, transport_section, app_section = self.split_by_layers(pkt)
-    #   if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
-    #     if wrapped_packet.domain_name not in http_dict:
-    #       http_dict[wrapped_packet.domain_name] = app_section
-    #     self.iface_ext.send_ip_packet(pkt)
-    #   else: # is a HTTP response
-    #     if wrapped_packet.domain_name in http_dict:
-    #       request_app_section = http_dict[domain_name]
-    #       response_app_section = app_section
-
-    #       # Return a string in the form
-    #       # "host_name method path version status_code object_size"
-    #       # with the two app sections as input
-    #       http_log_line = self.generate_http_log_line(request_app_section, response_app_section, wrapped_packet.ext_IP_address)
-
-    #       # Takes in http log line (a string) as input and appends it to the http.log file
-    #       self.append_to_http_log(http_log_line)
-
-    #       del http_dict[domain_name]
-    #       self.iface_ext.send_ip_packet(pkt)
-    #     else:
-    #       self.iface_int.send_ip_packet(pkt)
-    #       raise MissingHTTPRequestException("Missing corresponding HTTP request")
-
+    # 1. Assumes that HTTP request and response packets are atomic (Corresponding HTTP response follows HTTP request)
+    # 2. Also assumes that the HTTP request = 1 packet, HTTP response = 1 packet
+    # 3. Also assumes that no data is attached to HTTP request/HTTP response so only header fields present
+    # Unfortunately, all 3 assumptions are invalid :(
+    # TODO: Also need to support read_packet setting a WrappedPacket's host_name and check_for_http_logging fields
     def handle_log_http(self, pkt, pkt_dir, wrapped_packet):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
-      print app_section
-      if pkt_dir == PKT_DIR_OUTGOING:
+      if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
+        if wrapped_packet.domain_name not in http_dict:
+          # self.http_dict stores (key=host name, val=HTTP request app data)
+          self.http_dict[wrapped_packet.domain_name] = app_section
+        # Send the HTTP request packet to ext since only process HTTP request packet's app section when encounter corresponding HTTP reponse
         self.iface_ext.send_ip_packet(pkt)
-      else:
-        self.iface_int.send_ip_packet(pkt)
+      else: # is a HTTP response
+        # Find the matching HTTP request app_section to go along with the corresponding HTTP response, with match by host names
+        # This part is invalid because it relies on assumptions (1), (2) above.
+        if wrapped_packet.domain_name in self.http_dict:
+          request_app_section = self.http_dict[domain_name]
+          response_app_section = app_section
 
+          # Return a string of the form
+          # "host_name method path version status_code object_size"
+          # with the two app sections + wrapped_packet external IP addr as input
+          http_log_line = self.generate_http_log_line(request_app_section, response_app_section, wrapped_packet.ext_IP_address)
+
+          # Takes in http log line (a string) as input and appends it to the http.log file
+          self.append_to_http_log(http_log_line)
+
+          del http_dict[domain_name]
+          self.iface_ext.send_ip_packet(pkt)
+        else:
+          self.iface_int.send_ip_packet(pkt)
+          raise MissingHTTPRequestException("Missing corresponding HTTP request")
+
+    # app_section for HTTP request/reponse packets is just a plaintext string
+    # so don't need to do struct.unpack
+    # Assumes that app_section is composed out of HTTP headers as shown in
+    # lines 4-5 of project 3b spec.pdf and no data
     def generate_http_log_line(self, request_app_section, response_app_section, ip_address_obj):
+      # Each line of the HTTP request/response headers is an element in the list
       list_of_request_fields = request_app_section.split("\r\n")
       list_of_response_fields = response_app_section.split("\r\n")
 
+      # Extract info from first line of the HTTP request app_section
       first_request_line_list = list_of_request_fields[0].split(" ")
       method = first_request_line_list[0]
       path = first_request_line_list[1]
       version = first_request_line_list[2]
 
+      # Extract host_name
+      # From Wireshark, it appears that Host: header field does not have to be
+      # directly after the first request line (Double check)
       host_name = None
       for field in list_of_request_fields:
         if field.startswith("Host: "):
@@ -247,6 +262,7 @@ class Firewall:
       if host_name == None:
         host_name = ip_address_obj.ext_IP_address
 
+      # These last 2 fields have to be obtained from the HTTP response app_section
       first_response_line_list = list_of_response_fields[0].split(" ")
       status_code = first_response_line_list[1]
 
@@ -254,7 +270,7 @@ class Firewall:
       for field in list_of_response_fields:
         if field.startswith("Content-Length: "):
           object_size = field[len("Content-Length: "):]
-      if object_size == nONE:
+      if object_size == None:
         object_size = -1
 
       return host_name + " " + method + " " + path + " " + version + " " + status_code + " " + object_size
@@ -368,40 +384,51 @@ class Firewall:
     # See when we have to consider host-order
     def generate_TCP_header(self, ip_section, transport_section, set_rst=False):
       #Reverse Src/Dest from original transport section
+      #This is because we're sending a TCP RST packet back
       SOURCE_PORT = transport_section[2:4]
       DESTINATION_PORT = transport_section[0:2]
 
       # Set sender seqno. to ack=client_isn+1 since all TCP packets sent from receiver
       # have some sort of ack in them, where ack=client_isn+1
-      # since we are the people initializing the connection
+      # since we are the ones initializing the connection
+      # Possibly bad logic?
       SEQUENCE_NUM_INT = struct.unpack('!L', transport_section[8:12])[0] + 1
       SEQUENCE_NUM = struct.pack('!L', SEQUENCE_NUM_INT)
 
       ACK_NUM_INT = struct.unpack('!L', transport_section[4:8])[0] + 1
       ACK_NUM = struct.pack('!L', ACK_NUM_INT)
 
+      # Not sending any app data and no TCP options, so Offset = 5, Reserved = 0
       OFFSET_AND_RESERVED = chr((5 << 4) + 0)
 
       if set_rst==True:
+        # Only set RST = 1, set all other flags to 0
         TCP_FLAGS = chr(0b00000100)
       else:
         TCP_FLAGS = chr(0)
 
-      RECEIVE_WINDOW = struct.pack('!H', 0x0000)
+      # According to Piazza post, can set both of these to 0
+      # https://piazza.com/class/hjqfmgyat356br?cid=1069
+      WINDOW = struct.pack('!H', 0x0000)
       URGENT_DATA_POINTER = struct.pack('!H', 0x0000)
 
-      summation = self.calculate_sum(SOURCE_PORT + DESTINATION_PORT + SEQUENCE_NUM + ACK_NUM + OFFSET_AND_RESERVED + TCP_FLAGS + RECEIVE_WINDOW + URGENT_DATA_POINTER)
+      summation = self.calculate_sum(SOURCE_PORT + DESTINATION_PORT + SEQUENCE_NUM + ACK_NUM + OFFSET_AND_RESERVED + TCP_FLAGS + WINDOW + URGENT_DATA_POINTER)
 
+      # According to Wikipedia, there is a Pseudo header involved
+      # http://en.wikipedia.org/wiki/Transmission_Control_Protocol
+      # Pseudo header includes source addr, destination addr,
+      # protocol(zero-extended), and TCP length, where
+      # TCP length = length of the TCP header and data (in bytes)
       summation += struct.unpack('!H', ip_section[12:14])[0]
       summation += struct.unpack('!H', ip_section[14:16])[0]
       summation += struct.unpack('!H', ip_section[16:18])[0]
       summation += struct.unpack('!H', ip_section[18:20])[0]
-      summation += 20
+      summation += 20 # TCP length
       summation += 6 # TCP protocol number
 
       CHECKSUM = self.calculate_checksum(summation)
 
-      return SOURCE_PORT + DESTINATION_PORT + SEQUENCE_NUM + ACK_NUM + OFFSET_AND_RESERVED + TCP_FLAGS + RECEIVE_WINDOW + CHECKSUM + URGENT_DATA_POINTER
+      return SOURCE_PORT + DESTINATION_PORT + SEQUENCE_NUM + ACK_NUM + OFFSET_AND_RESERVED + TCP_FLAGS + WINDOW + CHECKSUM + URGENT_DATA_POINTER
 
     def calculate_sum(self, data):
       #Calculates a sum from the given data to be used in a checksum later
@@ -501,6 +528,14 @@ class Firewall:
       # Retrieve the string representation of the external IP address of a packet
       ext_IP_address = socket.inet_ntoa(ext_ip_tmp)
 
+      # check_for_http_logging determines whether or not a packet should be considered
+      # for a "http log" rule matching. Initially set to False unless can prove otherwise.
+      host_name = None
+      check_for_http_logging = False
+      if protocol == "tcp" and ext_port == 80:
+        # Set host_name and check_for_http_logging appropriately
+        pass
+
       # check_dns_rules determines whether or not a packet should be considered
       # for DNS rule matching. Initially set to False unless can prove otherwise.
       check_dns_rules = False
@@ -536,7 +571,7 @@ class Firewall:
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
 
-      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, QTYPE
+      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name, QTYPE
 
     # Given a list
     # [(0x77, 0x77, 0x77), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65), (0x63, 0x6f, 0x6d)]
@@ -563,8 +598,8 @@ class Firewall:
           if wrapped_packet.ext_IP_address == rule.ext_IP_address and wrapped_packet.ext_port == rule.ext_port:
             verdict = rule.verdict
         elif rule.protocol == "http":
-          if wrapped_packet.protocol == "tcp" and wrapped_packet.ext_port == ExtPortField(80): # all TCP traffic on port 80 is actually HTTP
-            verdict = rule.verdict
+          if wrapped_packet.check_for_http_logging and wrapped_packet.host_name == rule.host_name: # all TCP traffic on port 80 is actually HTTP
+            verdict = "log"
         elif rule.protocol == "dns" and wrapped_packet.check_dns_rules:
           # Examine rule further since check_dns_rules indicates that a packet should be checked against DNS rules
           # wrapped_packet only has a domain_name field if check_dns_rules is true for wrapped_packet
@@ -599,7 +634,8 @@ class RulesParser:
       return Rule(*tokens)
     #DNS Rules
     elif len(tokens) == 3:
-      if tokens[0] == 'log': # This is a log http
+      if tokens[0] == 'log': # This is a log http rule
+        # tokens[2] is the host name
         return HTTPRule(tokens[2])
       else:
         return DNSRule(*tokens)
@@ -676,18 +712,19 @@ class Rule:
 
 class WrappedPacket:
 
-  def __init__(self, protocol, ext_IP_address, ext_port, check_dns_rules, domain_name):
+  def __init__(self, protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name):
     self.protocol = protocol
     self.ext_IP_address = IPAddressField(ext_IP_address)
     self.ext_port = ExtPortField(ext_port)
     self.check_dns_rules = check_dns_rules
     self.domain_name = NameField(domain_name)
+    self.check_for_http_logging = check_for_http_logging
+    self.host_name = NameField(host_name)
 
 class HTTPRule(Rule):
   def __init__(self, host_name):
-    self.verdict = "log"
     self.protocol = "http"
-    self.domain_name = NameField(host_name)
+    self.host_name = NameField(host_name)
 
 class DNSRule(Rule):
 
@@ -804,14 +841,14 @@ class ExtPortField:
 
 class NameField:
 
-  def __init__(self, domain_name):
-    self.domain_name = domain_name
+  def __init__(self, name):
+    self.name = name
 
-  # Assume that the lhs of "==" is always the domain name
-  # of the packet, while the rhs is always the domain name of
+  # Assume that the lhs of "==" is always the domain name or host name
+  # of the packet, while the rhs is always the domain name or host name of
   # the rule that you're trying to match up with the packet
   def __eq__(self, other):
-    if other.domain_name.startswith("*"):
-      return self.domain_name.endswith(other.domain_name[1:])
+    if other.name.startswith("*"):
+      return self.name.endswith(other.name[1:])
     else:
-      return self.domain_name == other.domain_name
+      return self.name == other.name
