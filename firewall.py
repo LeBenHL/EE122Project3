@@ -870,6 +870,7 @@ class HttpTcpConnection:
   #Given a Pkt and the direction of the packet, we can analyze it to see the state of our HttpTcpConnection
   #Return True if we want to pass the packet, False if we should drop it since it is out of order
   def analyze(self, ip_section, transport_section, app_section, pkt_dir):
+    print "ANALYZE"
     if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
       self.reset_http_data()
 
@@ -878,7 +879,7 @@ class HttpTcpConnection:
     is_fin_pkt = self.is_fin_pkt(transport_section)
 
     if pkt_dir == PKT_DIR_OUTGOING: # from client
-      #print "NEW PACKET CLIENT"
+      print "NEW PACKET CLIENT"
 
       if is_syn_pkt:
         self.update_client_seq_no(transport_section)
@@ -902,19 +903,23 @@ class HttpTcpConnection:
           return False
 
     else: # from server
-      #print "NEW PACKET SERVER"
+      print "NEW PACKET SERVER"
 
       if is_syn_pkt:
+        print "SYN"
         self.update_server_seq_no(transport_section)
 
       if is_ack_pkt:
         #Don't care about ACKS from server. No data to look at
+        print "ACK"
         pass
 
       if is_fin_pkt:
+        print "FIN"
         self.close_connection()
 
       if not is_syn_pkt and not is_fin_pkt:
+        print "DATA"
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
@@ -922,8 +927,10 @@ class HttpTcpConnection:
         elif self.is_server_resubmission(seqno):
           pass
         else:
+          print "DROPPED SERVER"
           return False
 
+    print "PASS"
     return True
 
   def is_syn_pkt(self, transport_section):

@@ -232,4 +232,3 @@ if __name__ == '__main__':
 
     interceptor = PacketInterceptor(config)
     interceptor.run()
-    print "HI"
