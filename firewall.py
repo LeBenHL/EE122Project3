@@ -215,78 +215,47 @@ class Firewall:
     # Unfortunately, all 3 assumptions are invalid :(
     # TODO: Also need to support read_packet setting a WrappedPacket's host_name and check_for_http_logging fields
     def handle_log_http(self, pkt, pkt_dir):
-      ip_section, transport_section, app_section = self.split_by_layers(pkt)
-      if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
-        internal_port = struct.unpack("!H", transport_section[0:2])
-        if not self.http_tcp_conns.has_key(internal_port):
-          self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
+      try:
+        ip_section, transport_section, app_section = self.split_by_layers(pkt)
+        if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
+          internal_port = struct.unpack("!H", transport_section[0:2])[0]
+          if not self.http_tcp_conns.has_key(internal_port):
+            self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
 
-        connection = self.http_tcp_conns[internal_port]
+          connection = self.http_tcp_conns[internal_port]
 
-        if connection.analyze(pkt, pkt_dir):
+          if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
+            self.iface_ext.send_ip_packet(pkt)
+
+          self.log_http(connection)
+          
+        else: # is a HTTP response
+          internal_port = struct.unpack("!H", transport_section[2:4])[0]
+
+          if self.http_tcp_conns.has_key(internal_port):
+            connection = self.http_tcp_conns[internal_port]
+
+            if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
+              self.iface_int.send_ip_packet(pkt)
+
+            self.log_http(connection)
+          else:
+            self.iface_int.send_ip_packet(pkt)
+      except TypeError:
+        if pkt_dir == PKT_DIR_OUTGOING:
           self.iface_ext.send_ip_packet(pkt)
-        
-      else: # is a HTTP response
-        internal_port = struct.unpack("!H", transport_section[2:4])
-
-        #Should be an entry in the dictionary if we are getting a response back
-        assert self.http_tcp_conns.has_key(internal_port)
-
-        connection = self.http_tcp_conns[internal_port]
-
-        if connection.analyze(pkt, pkt_dir):
+        else:
           self.iface_int.send_ip_packet(pkt)
 
+    def log_http(self, connection):
       if connection.full_request_header_received and connection.full_response_header_received and not connection.logged:
         connection.logged = True
         log_file = open('http.log', 'a')
-        log_line = "%s %s %s %s %s %s\n" %(connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection,object_size)
+        log_line = "%s %s %s %s %s %s\n" % (connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection.object_size)
+        print log_line
         log_file.write(log_line)
         log_file.flush()
         log_file.close()
-
-    # app_section for HTTP request/reponse packets is just a plaintext string
-    # so don't need to do struct.unpack
-    # Assumes that app_section is composed out of HTTP headers as shown in
-    # lines 4-5 of project 3b spec.pdf and no data
-    def generate_http_log_line(self, request_app_section, response_app_section, ip_address_obj):
-      # Each line of the HTTP request/response headers is an element in the list
-      list_of_request_fields = request_app_section.split("\r\n")
-      list_of_response_fields = response_app_section.split("\r\n")
-
-      # Extract info from first line of the HTTP request app_section
-      first_request_line_list = list_of_request_fields[0].split(" ")
-      method = first_request_line_list[0]
-      path = first_request_line_list[1]
-      version = first_request_line_list[2]
-
-      # Extract host_name
-      # From Wireshark, it appears that Host: header field does not have to be
-      # directly after the first request line (Double check)
-      host_name = None
-      for field in list_of_request_fields:
-        if field.startswith("Host: "):
-          host_name = field[len("Host: "):]
-      if host_name == None:
-        host_name = ip_address_obj.ext_IP_address
-
-      # These last 2 fields have to be obtained from the HTTP response app_section
-      first_response_line_list = list_of_response_fields[0].split(" ")
-      status_code = first_response_line_list[1]
-
-      object_size = None
-      for field in list_of_response_fields:
-        if field.startswith("Content-Length: "):
-          object_size = field[len("Content-Length: "):]
-      if object_size == None:
-        object_size = -1
-
-      return host_name + " " + method + " " + path + " " + version + " " + status_code + " " + object_size
-
-    def append_to_http_log(self, http_log_line):
-      f = open('http.log', 'a')
-      f.write(http_log_line + "\n")
-      f.close()
 
     def handle_deny_dns(self, domain_name, pkt):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
@@ -606,7 +575,8 @@ class Firewall:
           if wrapped_packet.ext_IP_address == rule.ext_IP_address and wrapped_packet.ext_port == rule.ext_port:
             verdict = rule.verdict
         elif rule.protocol == "http":
-          if wrapped_packet.check_for_http_logging and wrapped_packet.host_name == rule.host_name: # all TCP traffic on port 80 is actually HTTP
+          #if wrapped_packet.check_for_http_logging and wrapped_packet.host_name == rule.host_name: # all TCP traffic on port 80 is actually HTTP
+          if wrapped_packet.protocol == "tcp" and wrapped_packet.ext_port.ext_port == 80:
             verdict = "log"
         elif rule.protocol == "dns" and wrapped_packet.check_dns_rules:
           # Examine rule further since check_dns_rules indicates that a packet should be checked against DNS rules
@@ -870,7 +840,7 @@ class HttpTcpConnection:
   DATA_DONE_SENDING = 3
   INACTIVE = 4
 
-  MAX_32_BIT_INT = 0xffffffff
+  MAX_32_BIT_INT = pow(2, 32)
 
   def __init__(self, state):
     self.state = state
@@ -881,6 +851,8 @@ class HttpTcpConnection:
     self.response_content_length_so_far = 0
     self.full_request_header_received = False
     self.full_response_header_received = False
+    self.isn_client = None
+    self.isn_server = None
 
     #Fields to log
     self.host_name = None
@@ -893,14 +865,16 @@ class HttpTcpConnection:
   
   #Given a Pkt and the direction of the packet, we can analyze it to see the state of our HttpTcpConnection
   #Return True if we want to pass the packet, False if we should drop it since it is out of order
-  def analyze(self, pkt, pkt_dir):
-    ip_section, transport_section, app_section = self.split_by_layers(pkt)
+  def analyze(self, ip_section, transport_section, app_section, pkt_dir):
+    if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
+      self.reset_http_data()
 
     is_syn_pkt = self.is_syn_pkt(transport_section)
     is_ack_pkt = self.is_ack_pkt(transport_section)
     is_fin_pkt = self.is_fin_pkt(transport_section)
 
     if pkt_dir == PKT_DIR_OUTGOING: # from client
+      #print "NEW PACKET CLIENT"
 
       if is_syn_pkt:
         self.update_client_seq_no(transport_section)
@@ -910,19 +884,23 @@ class HttpTcpConnection:
         pass
 
       if is_fin_pkt:
-        self.close_connection():
+        self.close_connection()
 
-      if !is_syn_pkt and !is_ack_pkt and !is_fin_pkt:
+      if not is_syn_pkt and not is_fin_pkt:
         #Packet with our HTTP Data!
-        seqno = struct.unpack('!L', transport_section[4:8])
+        seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.client_seqno: #Is the expected Seqno
           self.update_request_data(app_section)
+        elif self.is_client_resubmission(seqno):
+          pass
         else:
+          #print "DROPPED CLIENT"
           return False
 
     else: # from server
+      #print "NEW PACKET SERVER"
 
-      if is_fin_pkt:
+      if is_syn_pkt:
         self.update_server_seq_no(transport_section)
 
       if is_ack_pkt:
@@ -930,53 +908,62 @@ class HttpTcpConnection:
         pass
 
       if is_fin_pkt:
-        self.close_connection():
+        self.close_connection()
 
-      if !is_syn_pkt and !is_ack_pkt and !is_fin_pkt:
+      if not is_syn_pkt and not is_fin_pkt:
         #Packet with our HTTP Data!
-
-      if !is_syn_pkt and !is_ack_pkt and !is_fin_pkt:
-        #Packet with our HTTP Data!
-        seqno = struct.unpack('!L', transport_section[4:8])
+        seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
           self.update_response_data(app_section)
+        elif self.is_server_resubmission(seqno):
+          pass
         else:
+          print "DROPPED SERVER"
           return False
 
     return True
 
   def is_syn_pkt(self, transport_section):
-    return struct.unpack('!B', transport_section[13]) & 0x02
+    return struct.unpack('!B', transport_section[13])[0] & 0x02
 
   def is_ack_pkt(self, transport_section):
-    return struct.unpack('!B', transport_section[13]) & 0x10
+    return struct.unpack('!B', transport_section[13])[0] & 0x10
 
   def is_fin_pkt(self, transport_section):
-    return struct.unpack('!B', transport_section[13]) & 0x01
+    return struct.unpack('!B', transport_section[13])[0] & 0x01
+
+  def is_client_resubmission(self, seqno):
+    return (seqno < self.client_seqno and (self.client_seqno - seqno) < pow(2, 31)) or (seqno > self.client_seqno and (seqno - self.client_seqno) > pow(2, 31))
+
+  def is_server_resubmission(self, seqno):
+    return (seqno < self.server_seqno and (self.server_seqno - seqno) < pow(2, 31)) or (seqno > self.server_seqno and (seqno - self.server_seqno) > pow(2, 31))
 
   def update_client_seq_no(self, transport_section):
-    if self.state == INACTIVE:
-      self.state = CLIENT_INITIAL_SYN
+    if self.state == HttpTcpConnection.INACTIVE:
+      #print "1st Handshake"
+      self.state = HttpTcpConnection.CLIENT_INITIAL_SYN
 
-      seqno = struct.unpack('!L', transport_section[4:8])
-      self.client_seqno = seqno
+      seqno = struct.unpack('!L', transport_section[4:8])[0]
+      self.client_seqno = (seqno + 1) % HttpTcpConnection.MAX_32_BIT_INT
+      self.isn_client = seqno % HttpTcpConnection.MAX_32_BIT_INT
     else:
       print "Updating Client Seq No when we are in State: %d" % self.state
 
   def update_server_seq_no(self, transport_section):
-    if self.state == CLIENT_INITIAL_SYN:
-      self.state = SERVER_SYN_ACK
+    if self.state == HttpTcpConnection.CLIENT_INITIAL_SYN:
+      #print "2nd Handshake"
+      self.state = HttpTcpConnection.SERVER_SYN_ACK
 
-      seqno = struct.unpack('!L', transport_section[4:8])
-      self.server_seqno = seqno
+      seqno = struct.unpack('!L', transport_section[4:8])[0]
+      self.server_seqno = (seqno + 1) % HttpTcpConnection.MAX_32_BIT_INT
+      self.isn_server = seqno % HttpTcpConnection.MAX_32_BIT_INT
     else:
       print "Updating Server Seq No when we are in State: %d" % self.state
 
   def update_request_data(self, app_section):
-    #TODO, doesn't this fuck up when out of order?
-    if self.state == SERVER_SYN_ACK or self.state == SENDING_DATA:
-      self.state == SENDING_DATA
-      self.client_seqno == (self.client_seqno + len(app_section)) % MAX_32_BIT_INT
+    if self.state == HttpTcpConnection.SERVER_SYN_ACK or self.state == HttpTcpConnection.SENDING_DATA:
+      self.state = HttpTcpConnection.SENDING_DATA
+      self.client_seqno = (self.client_seqno + len(app_section)) % HttpTcpConnection.MAX_32_BIT_INT
 
       if self.full_request_header_received:
         pass
@@ -988,6 +975,8 @@ class HttpTcpConnection:
       print "Updating Request data when we are in State: %d" % self.state
 
   def attempt_to_parse_request(self):
+    if self.http_request_data == "":
+      return
     lines = re.split("\r?\n", self.http_request_data)
     if "" in lines:
       self.full_request_header_received = True
@@ -997,12 +986,13 @@ class HttpTcpConnection:
       self.version = request_line[2]
 
       for line in lines:
-        if line.strip().startswith("Host:")
-          self.host = line.split()[1]
+        stripped_line = line.strip()
+        if stripped_line.startswith("Host:"):
+          self.host_name = stripped_line.split()[1]
 
   def update_response_data(self, app_section):
-    if self.state == SENDING_DATA:
-      self.server_seqno == (self.server_seqno + len(app_section)) % MAX_32_BIT_INT
+    if self.state == HttpTcpConnection.SENDING_DATA:
+      self.server_seqno = (self.server_seqno + len(app_section)) % HttpTcpConnection.MAX_32_BIT_INT
 
       if self.full_response_header_received:
         self.response_content_length_so_far += len(app_section)
@@ -1016,6 +1006,8 @@ class HttpTcpConnection:
       print "Updating Response data when we are in State: %d" % self.state
 
   def attempt_to_parse_response(self):
+    if self.http_response_data == "":
+      return
     lines = re.split("\r?\n", self.http_response_data)
     if "" in lines:
       self.full_response_header_received = True
@@ -1024,23 +1016,27 @@ class HttpTcpConnection:
 
       found_content_length = False
       for line in lines:
-        if line.strip().startswith("Content-Length:")
-          self.object_size = line.split()[1]
+        if line.strip().startswith("Content-Length:"):
+          self.object_size = int(line.split()[1])
           found_content_length = True
 
       if not found_content_length:
         self.object_size = -1
 
       for content in lines[lines.index(""):]:
-        self.response_content_length_so_far += len(line)
+        self.response_content_length_so_far += len(content)
 
-  def check_for_complete_response():
+  def check_for_complete_response(self):
+    print (self.response_content_length_so_far, self.object_size)
+    print self
     if self.response_content_length_so_far == self.object_size:
-      self.state = DATA_DONE_SENDING
+      self.state = HttpTcpConnection.DATA_DONE_SENDING
+    print
 
-  def close_connection(self, transport_section):
-    if self.state == DATA_DONE_SENDING or self.state == DATA_SENDING:
-      self.state = INACTIVE
+  def close_connection(self):
+    if self.state == HttpTcpConnection.DATA_DONE_SENDING or self.state == HttpTcpConnection.SENDING_DATA:
+      print "Close"
+      self.state = HttpTcpConnection.INACTIVE
       self.http_request_data = ""
       self.http_response_data = ""
       self.client_seqno = None
@@ -1048,6 +1044,8 @@ class HttpTcpConnection:
       self.response_content_length_so_far = 0
       self.full_request_header_received = False
       self.full_response_header_received = False
+      self.isn_client = None
+      self.isn_server = None
 
       self.host_name = None
       self.method = None
@@ -1057,16 +1055,20 @@ class HttpTcpConnection:
       self.object_size = None
       self.logged = False
     else:
-      print "Closing connection when we are in State: %d" % self.state
+      if self.state != HttpTcpConnection.INACTIVE:
+        print "Closing connection when we are in State: %d" % self.state
 
   def reset_http_data(self):
-    if self.state = DATA_DONE_SENDING:
-      self.state = SENDING_DATA
+    if self.state == HttpTcpConnection.DATA_DONE_SENDING:
+      print "Reset"
+      self.state = HttpTcpConnection.SENDING_DATA
       self.http_request_data = ""
       self.http_response_data = ""
       self.response_content_length_so_far = 0
       self.full_request_header_received = False
       self.full_response_header_received = False
+      self.isn_client = None
+      self.isn_server = None
 
       self.host_name = None
       self.method = None
