@@ -918,7 +918,6 @@ class HttpTcpConnection:
         elif self.is_server_resubmission(seqno):
           pass
         else:
-          print "DROPPED SERVER"
           return False
 
     return True
@@ -1029,15 +1028,15 @@ class HttpTcpConnection:
       self.response_content_length_so_far += len(http_object)
 
   def check_for_complete_response(self):
-    print (self.response_content_length_so_far, self.object_size)
-    print self
+    #print (self.response_content_length_so_far, self.object_size)
+    #print self
     if self.response_content_length_so_far == self.object_size:
       self.state = HttpTcpConnection.DATA_DONE_SENDING
-    print
+    #print
 
   def close_connection(self):
     if self.state == HttpTcpConnection.DATA_DONE_SENDING or self.state == HttpTcpConnection.SENDING_DATA:
-      print "Close"
+      #print "Close"
       self.state = HttpTcpConnection.INACTIVE
       self.http_request_data = ""
       self.http_response_data = ""
@@ -1062,7 +1061,7 @@ class HttpTcpConnection:
 
   def reset_http_data(self):
     if self.state == HttpTcpConnection.DATA_DONE_SENDING:
-      print "Reset"
+      #print "Reset"
       self.state = HttpTcpConnection.SENDING_DATA
       self.http_request_data = ""
       self.http_response_data = ""
