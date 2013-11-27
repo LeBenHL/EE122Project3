@@ -117,6 +117,9 @@ class Firewall:
             pass
           except MalformedPacketException as e:
             pass
+          except Exception as e:
+            print e
+
 
     def respond_to_traceroute(self, pkt):
       #GET TTL Value
@@ -252,7 +255,7 @@ class Firewall:
         connection.logged = True
         log_file = open('http.log', 'a')
         log_line = "%s %s %s %s %s %s\n" % (connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection.object_size)
-        print log_line
+        #print log_line
         log_file.write(log_line)
         log_file.flush()
         log_file.close()
@@ -831,6 +834,7 @@ class NameField:
     else:
       return self.name == other.name
 
+#TODO - Ben, Reset Sequences? WTF Happens in this case
 class HttpTcpConnection:
 
   #List of Possible States a Connection can be in

@@ -45,7 +45,9 @@ class RegularInterface(EthernetInterface):
         self.handle.bind((name, 0))
 
     def send_eth_frame(self, frame):
-        self.handle.send(frame)
+        print len(frame)
+        print self.handle.send(frame)
+        print
 
 class TAPInterface(EthernetInterface):
     # Note: Those constants may differ across systems.
@@ -60,7 +62,9 @@ class TAPInterface(EthernetInterface):
         fcntl.ioctl(self.handle, self.TUNSETIFF, ioctl_arg)
 
     def send_eth_frame(self, frame):
-        os.write(self.handle.fileno(), frame)
+        print len(frame)
+        print os.write(self.handle.fileno(), frame)
+        print
 
 class Timer:
     def __init__(self):
@@ -153,6 +157,7 @@ class PacketInterceptor:
 
     def process_packet(self, pkt_dir, frame):
         # "!" for BIG endian
+        print "WE HAVE PACKET"
         dst_mac, src_mac, eth_type = struct.unpack('!6s6sH', 
                 frame[:EthernetInterface.HDR_SIZE])
         bypass = False
@@ -227,3 +232,4 @@ if __name__ == '__main__':
 
     interceptor = PacketInterceptor(config)
     interceptor.run()
+    print "HI"
