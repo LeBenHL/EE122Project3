@@ -934,10 +934,16 @@ class HttpTcpConnection:
     return struct.unpack('!B', transport_section[13])[0] & 0x01
 
   def is_client_resubmission(self, seqno):
-    return (seqno < self.client_seqno and (self.client_seqno - seqno) < pow(2, 31)) or (seqno > self.client_seqno and (seqno - self.client_seqno) > pow(2, 31))
+    if self.client_seqno:
+      return (seqno < self.client_seqno and (self.client_seqno - seqno) < pow(2, 31)) or (seqno > self.client_seqno and (seqno - self.client_seqno) > pow(2, 31))
+    else:
+      return False
 
   def is_server_resubmission(self, seqno):
-    return (seqno < self.server_seqno and (self.server_seqno - seqno) < pow(2, 31)) or (seqno > self.server_seqno and (seqno - self.server_seqno) > pow(2, 31))
+    if self.server_seqno:
+      return (seqno < self.server_seqno and (self.server_seqno - seqno) < pow(2, 31)) or (seqno > self.server_seqno and (seqno - self.server_seqno) > pow(2, 31))
+    else:
+      return False
 
   def update_client_seq_no(self, transport_section):
     if self.state == HttpTcpConnection.INACTIVE:
