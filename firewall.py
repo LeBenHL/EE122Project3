@@ -215,35 +215,29 @@ class Firewall:
     # Unfortunately, all 3 assumptions are invalid :(
     # TODO: Also need to support read_packet setting a WrappedPacket's host_name and check_for_http_logging fields
     def handle_log_http(self, pkt, pkt_dir):
-      try:
-        ip_section, transport_section, app_section = self.split_by_layers(pkt)
-        if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
-          internal_port = struct.unpack("!H", transport_section[0:2])[0]
-          if not self.http_tcp_conns.has_key(internal_port):
-            self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
+      ip_section, transport_section, app_section = self.split_by_layers(pkt)
+      if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
+        internal_port = struct.unpack("!H", transport_section[0:2])[0]
+        if not self.http_tcp_conns.has_key(internal_port):
+          self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
 
+        connection = self.http_tcp_conns[internal_port]
+
+        if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
+          self.iface_ext.send_ip_packet(pkt)
+
+        self.log_http(connection)
+        
+      else: # is a HTTP response
+        internal_port = struct.unpack("!H", transport_section[2:4])[0]
+
+        if self.http_tcp_conns.has_key(internal_port):
           connection = self.http_tcp_conns[internal_port]
 
           if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
-            self.iface_ext.send_ip_packet(pkt)
+            self.iface_int.send_ip_packet(pkt)
 
           self.log_http(connection)
-          
-        else: # is a HTTP response
-          internal_port = struct.unpack("!H", transport_section[2:4])[0]
-
-          if self.http_tcp_conns.has_key(internal_port):
-            connection = self.http_tcp_conns[internal_port]
-
-            if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
-              self.iface_int.send_ip_packet(pkt)
-
-            self.log_http(connection)
-          else:
-            self.iface_int.send_ip_packet(pkt)
-      except TypeError:
-        if pkt_dir == PKT_DIR_OUTGOING:
-          self.iface_ext.send_ip_packet(pkt)
         else:
           self.iface_int.send_ip_packet(pkt)
 
@@ -1064,6 +1058,13 @@ class HttpTcpConnection:
       self.object_size = None
       self.logged = False
     else:
+      """
+      Two Fin packets are sent when closing a connection, one from the client, one from the server
+      We set our connection state to inactive when we see the first fin which means the second fin
+      does nothing. I just put this here to silent the state machine error we see since its not much
+      an error and I don't want to deal with having a middle man state between active and inactive 
+      connections
+      """
       if self.state != HttpTcpConnection.INACTIVE:
         print "Closing connection when we are in State: %d" % self.state
 
