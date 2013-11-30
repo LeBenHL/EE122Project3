@@ -848,6 +848,7 @@ class HttpTcpConnection:
     self.full_response_header_received = False
     self.isn_client = None
     self.isn_server = None
+    self.ext_IP_address = None
 
     #Fields to log
     self.host_name = None
@@ -871,6 +872,7 @@ class HttpTcpConnection:
 
     if pkt_dir == PKT_DIR_OUTGOING: # from client
       #print "NEW PACKET CLIENT"
+      self.ext_IP_address = socket.inet_ntoa(ip_section[16:20])
 
       if is_syn_pkt:
         self.update_client_seq_no(transport_section)
@@ -895,6 +897,7 @@ class HttpTcpConnection:
 
     else: # from server
       #print "NEW PACKET SERVER"
+      self.ext_IP_address = socket.inet_ntoa(ip_section[12:16])
 
       if is_syn_pkt:
         #print "SYN"
@@ -992,10 +995,15 @@ class HttpTcpConnection:
       self.path = request_line[1]
       self.version = request_line[2]
 
+      found_host_name = False
       for line in lines:
         stripped_line = line.strip()
         if stripped_line.startswith("Host:"):
           self.host_name = stripped_line.split()[1]
+          found_host_name = True
+
+      if not found_host_name:
+        self.host_name = self.ext_IP_address
 
   def update_response_data(self, app_section):
     if self.state == HttpTcpConnection.SENDING_DATA:
@@ -1055,6 +1063,7 @@ class HttpTcpConnection:
       self.full_response_header_received = False
       self.isn_client = None
       self.isn_server = None
+      self.ext_IP_address = None
 
       self.host_name = None
       self.method = None
@@ -1085,6 +1094,7 @@ class HttpTcpConnection:
       self.full_response_header_received = False
       self.isn_client = None
       self.isn_server = None
+      self.ext_IP_address = None
 
       self.host_name = None
       self.method = None
