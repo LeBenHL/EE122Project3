@@ -472,7 +472,7 @@ class Firewall:
         protocol = "udp"
       else:
         #Not a Protocol we recognize, should we just drop?
-        return (None, None, None, None, None)
+        return (None, None, None, None, None, None, None, None)
 
       header_len_tmp = struct.unpack('!B',pkt[0])[0]
       header_len = header_len_tmp & 0x0F
@@ -541,7 +541,7 @@ class Firewall:
           QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
-
+      # Need to make sure to change the other return (None, None, None, None, None, None, None, None) to have the same # of elements
       return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name, QTYPE
 
     # Given a list
