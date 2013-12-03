@@ -12,9 +12,6 @@ import re
 class MalformedPacketException(Exception):
   pass
 
-class MissingHTTPRequestException(Exception):
-  pass
-
 class Firewall:
 
     def __init__(self, config, timer, iface_int, iface_ext):
@@ -40,7 +37,7 @@ class Firewall:
             self.lossy = False
 
         parser = RulesParser(config['rule'])
-        self.rules = parser.parse_rules()
+        self.rules, self.http_rules = parser.parse_rules()
 
     def handle_timer(self):
         pass
@@ -56,70 +53,64 @@ class Firewall:
         # Deal with nonlossy stuff here
         else:
           try:
-            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name, QTYPE = self.read_packet(pkt, pkt_dir)
-            wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name)
+            protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, QTYPE = self.read_packet(pkt, pkt_dir)
+            wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging)
 
-            # verdict can be either 'pass', 'drop', 'deny', or 'log'
+            # verdict can be either 'pass', 'drop', 'deny'
             verdict = self.packet_lookup(wrapped_packet)
 
-            # Useful stuff for debugging
-            if pkt_dir == PKT_DIR_INCOMING:
-              #print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
-              pass
+            if wrapped_packet.check_for_http_logging and verdict == "pass":
+              self.handle_log_http(pkt, pkt_dir)
             else:
-              #print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
-              pass
+            # Useful stuff for debugging
+            # if pkt_dir == PKT_DIR_INCOMING:
+            #   #print "Incoming Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+            #   pass
+            # else:
+            #   #print "Outgoing Verdict: %s, Protocol: %s, ext_IP_address: %s, ext_port: %s, domain_name: %s" % (verdict, protocol, ext_IP_address, ext_port, domain_name)
+            #   pass
+              if verdict == "pass":
+                if pkt_dir == PKT_DIR_INCOMING:
+                  self.iface_int.send_ip_packet(pkt)
+                else: # pkt_dir == PKT_DIR_OUTGOING
+                  #TRACEROUTE 192.168.122.122!
+                  if protocol == "udp" and ext_IP_address == "192.168.122.122":
+                    self.respond_to_traceroute(pkt)
+                  elif protocol == "udp" and ext_port == 53 and QTYPE == 12:
+                    ip_to_lookup = self.parse_ip_to_lookup(domain_name)
 
-            if verdict == "pass":
-              if pkt_dir == PKT_DIR_INCOMING:
-                self.iface_int.send_ip_packet(pkt)
-              else: # pkt_dir == PKT_DIR_OUTGOING
-                #TRACEROUTE 192.168.122.122!
-                if protocol == "udp" and ext_IP_address == "192.168.122.122":
-                  self.respond_to_traceroute(pkt)
-                elif protocol == "udp" and ext_port == 53 and QTYPE == 12:
-                  ip_to_lookup = self.parse_ip_to_lookup(domain_name)
+                    if ip_to_lookup.startswith("192.168.122"):
+                      ip_section, transport_section, app_section = self.split_by_layers(pkt)
+                      
+                      #Generate Reverse DNS response
+                      app_data = self.generate_reverse_DNS_response(app_section, domain_name, ip_to_lookup)
 
-                  if ip_to_lookup.startswith("192.168.122"):
-                    ip_section, transport_section, app_section = self.split_by_layers(pkt)
-                    
-                    #Generate Reverse DNS response
-                    app_data = self.generate_reverse_DNS_response(app_section, domain_name, ip_to_lookup)
+                      #Generate UDP header from the transport_section data and the app data
+                      transport_header = self.generate_UDP_header(ip_section, transport_section, app_data)
 
-                    #Generate UDP header from the transport_section data and the app data
-                    transport_header = self.generate_UDP_header(ip_section, transport_section, app_data)
+                      #Generate IP header from the ip_section and payload
+                      ip_header = self.generate_IP_header(ip_section, transport_header + app_data)
 
-                    #Generate IP header from the ip_section and payload
-                    ip_header = self.generate_IP_header(ip_section, transport_header + app_data)
-
-                    #Send the Constructed Packet to INT Interface
-                    self.iface_int.send_ip_packet(ip_header + transport_header + app_data)
+                      #Send the Constructed Packet to INT Interface
+                      self.iface_int.send_ip_packet(ip_header + transport_header + app_data)
+                    else:
+                      self.iface_ext.send_ip_packet(pkt)
                   else:
                     self.iface_ext.send_ip_packet(pkt)
+              elif verdict == "deny":
+                # either deny tcp or deny dns
+                if protocol == "tcp":
+                  self.handle_deny_tcp(pkt, pkt_dir)
                 else:
-                  self.iface_ext.send_ip_packet(pkt)
-            elif verdict == "deny":
-              # either deny tcp or deny dns
-              if protocol == "tcp":
-                self.handle_deny_tcp(pkt)
-              else:
-                self.handle_deny_dns(domain_name, pkt)
-            elif verdict == "log":
-              self.handle_log_http(pkt, pkt_dir)
-            elif verdict == "drop":
-              #Do Nothing to just drop it
-              pass
+                  self.handle_deny_dns(domain_name, pkt)
+              elif verdict == "drop":
+                #Do Nothing to just drop it
+                pass
           except IndexError as e:
-            print e
-            pass
-          except MissingHTTPRequestException as e:
             print e
             pass
           except MalformedPacketException as e:
             pass
-          except Exception as e:
-            print e
-
 
     def respond_to_traceroute(self, pkt):
       #GET TTL Value
@@ -199,7 +190,7 @@ class Firewall:
 
       return ".".join(ip_parts) 
 
-    def handle_deny_tcp(self, pkt):
+    def handle_deny_tcp(self, pkt, pkt_dir):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
       #Generate TCP header from transport_section data; don't need app_section
@@ -209,56 +200,48 @@ class Firewall:
       # Generate IP header from the ip_section and payload
       ip_header = self.generate_IP_header(ip_section, transport_header)
 
-      #Send the Constructed Packet to EXT Interface
-      self.iface_ext.send_ip_packet(ip_header + transport_header)
+      if pkt_dir == PKT_DIR_INCOMING: # Packet came from EXT interface (source is outside world)
+        self.iface_ext.send_ip_packet(ip_header + transport_header) # Send RST packet back to sender in outside world
+      else: # Packet came from INT interfance (source is myself)
+        self.iface_int.send_ip_packet(ip_header + transport_header) # Send RST packet back to sender
 
-    # 1. Assumes that HTTP request and response packets are atomic (Corresponding HTTP response follows HTTP request)
-    # 2. Also assumes that the HTTP request = 1 packet, HTTP response = 1 packet
-    # 3. Also assumes that no data is attached to HTTP request/HTTP response so only header fields present
-    # Unfortunately, all 3 assumptions are invalid :(
-    # TODO: Also need to support read_packet setting a WrappedPacket's host_name and check_for_http_logging fields
     def handle_log_http(self, pkt, pkt_dir):
-      try:
-        ip_section, transport_section, app_section = self.split_by_layers(pkt)
-        if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
-          internal_port = struct.unpack("!H", transport_section[0:2])[0]
-          if not self.http_tcp_conns.has_key(internal_port):
-            self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
+      ip_section, transport_section, app_section = self.split_by_layers(pkt)
+      if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
+        internal_port = struct.unpack("!H", transport_section[0:2])[0]
+        if not self.http_tcp_conns.has_key(internal_port):
+          self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
 
+        connection = self.http_tcp_conns[internal_port]
+
+        if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
+          self.iface_ext.send_ip_packet(pkt)
+
+        self.log_http(connection)
+        
+      else: # is a HTTP response
+        internal_port = struct.unpack("!H", transport_section[2:4])[0]
+
+        if self.http_tcp_conns.has_key(internal_port):
           connection = self.http_tcp_conns[internal_port]
 
           if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
-            self.iface_ext.send_ip_packet(pkt)
+            self.iface_int.send_ip_packet(pkt)
 
           self.log_http(connection)
-          
-        else: # is a HTTP response
-          internal_port = struct.unpack("!H", transport_section[2:4])[0]
-
-          if self.http_tcp_conns.has_key(internal_port):
-            connection = self.http_tcp_conns[internal_port]
-
-            if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
-              self.iface_int.send_ip_packet(pkt)
-
-            self.log_http(connection)
-          else:
-            self.iface_int.send_ip_packet(pkt)
-      except TypeError:
-        if pkt_dir == PKT_DIR_OUTGOING:
-          self.iface_ext.send_ip_packet(pkt)
         else:
           self.iface_int.send_ip_packet(pkt)
 
     def log_http(self, connection):
       if connection.full_request_header_received and connection.full_response_header_received and not connection.logged:
         connection.logged = True
-        log_file = open('http.log', 'a')
-        log_line = "%s %s %s %s %s %s\n" % (connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection.object_size)
-        #print log_line
-        log_file.write(log_line)
-        log_file.flush()
-        log_file.close()
+        if self.match_http_rule(connection.host_name):
+          log_file = open('http.log', 'a')
+          log_line = "%s %s %s %s %s %s\n" % (connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection.object_size)
+          print log_line
+          log_file.write(log_line)
+          log_file.flush()
+          log_file.close()
 
     def handle_deny_dns(self, domain_name, pkt):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
@@ -360,8 +343,6 @@ class Firewall:
 
       return SOURCE_PORT + DESTINATION_PORT + LENGTH + CHECKSUM
 
-    # TODO: Need to verify that these fields are correctly generated
-    # See when we have to consider host-order
     def generate_TCP_header(self, ip_section, transport_section, set_rst=False):
       #Reverse Src/Dest from original transport section
       #This is because we're sending a TCP RST packet back
@@ -372,9 +353,16 @@ class Firewall:
       # have some sort of ack in them, where ack=client_isn+1
       # since we are the ones initializing the connection
       # Possibly bad logic?
-      SEQUENCE_NUM_INT = struct.unpack('!L', transport_section[8:12])[0] + 1
-      SEQUENCE_NUM = struct.pack('!L', SEQUENCE_NUM_INT)
+      #SEQUENCE_NUM_INT = struct.unpack('!L', transport_section[8:12])[0] + 1
+      #SEQUENCE_NUM = struct.pack('!L', SEQUENCE_NUM_INT)
 
+      # Can be anything, since assume that sender is in SYN-SENT state
+      # So if it receives a RST, it does not check sequence number field
+      SEQUENCE_NUM = struct.pack('!L', 0x00000001)
+
+      # Check the header 'Reset Processing here':
+      # https://www.ietf.org/rfc/rfc793.txt
+      # ACK_NUM = client_isn(source packet SEQNO field) + 1
       ACK_NUM_INT = struct.unpack('!L', transport_section[4:8])[0] + 1
       ACK_NUM = struct.pack('!L', ACK_NUM_INT)
 
@@ -383,7 +371,7 @@ class Firewall:
 
       if set_rst==True:
         # Only set RST = 1, set all other flags to 0
-        TCP_FLAGS = chr(0b00000100)
+        TCP_FLAGS = chr(0b00010100)
       else:
         TCP_FLAGS = chr(0)
 
@@ -481,7 +469,7 @@ class Firewall:
         protocol = "udp"
       else:
         #Not a Protocol we recognize, should we just drop?
-        return (None, None, None, None, None)
+        return (None, None, None, None, None, None, None)
 
       header_len_tmp = struct.unpack('!B',pkt[0])[0]
       header_len = header_len_tmp & 0x0F
@@ -510,11 +498,9 @@ class Firewall:
 
       # check_for_http_logging determines whether or not a packet should be considered
       # for a "http log" rule matching. Initially set to False unless can prove otherwise.
-      host_name = None
       check_for_http_logging = False
       if protocol == "tcp" and ext_port == 80:
-        # Set host_name and check_for_http_logging appropriately
-        pass
+        check_for_http_logging = True
 
       # check_dns_rules determines whether or not a packet should be considered
       # for DNS rule matching. Initially set to False unless can prove otherwise.
@@ -550,8 +536,8 @@ class Firewall:
           QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
-
-      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name, QTYPE
+      # Need to make sure to change the other return (None, None, None, None, None, None, None, None) to have the same # of elements
+      return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, QTYPE
 
     # Given a list
     # [(0x77, 0x77, 0x77), (0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65), (0x63, 0x6f, 0x6d)]
@@ -577,16 +563,21 @@ class Firewall:
           # Examine rule further since rule protocol matches packet protocol (TCP/UDP/ICMP)
           if wrapped_packet.ext_IP_address == rule.ext_IP_address and wrapped_packet.ext_port == rule.ext_port:
             verdict = rule.verdict
-        elif rule.protocol == "http":
-          #if wrapped_packet.check_for_http_logging and wrapped_packet.host_name == rule.host_name: # all TCP traffic on port 80 is actually HTTP
-          if wrapped_packet.protocol == "tcp" and wrapped_packet.ext_port.ext_port == 80:
-            verdict = "log"
         elif rule.protocol == "dns" and wrapped_packet.check_dns_rules:
           # Examine rule further since check_dns_rules indicates that a packet should be checked against DNS rules
           # wrapped_packet only has a domain_name field if check_dns_rules is true for wrapped_packet
           if wrapped_packet.domain_name == rule.domain_name:
             verdict = rule.verdict
       return verdict
+
+    def match_http_rule(self, host_name):
+      match_verdict = False
+
+      for http_rule in self.http_rules:
+        if NameField(host_name) == http_rule.host_name: # Should also cover IP address matching since no prefix, country codes, or "any" involved (Only simple string matching involved in IPv4 case)
+          match_verdict = True
+          break
+      return match_verdict
 
 class RulesParser:
 
@@ -596,14 +587,18 @@ class RulesParser:
   def parse_rules(self):
     f = open(self.filename, 'r')
     rules = []
+    http_rules = []
     for line in f:
       line = line.strip()
       #Ignore All lines that are blank or comment lines
       if line and not self._is_comment_line(line):
         rule = self.parse_line(line)
         if rule:
-          rules.append(rule)
-    return rules
+          if isinstance(rule, HTTPRule):
+          	http_rules.append(rule)
+          else:
+          	rules.append(rule)
+    return rules, http_rules
 
   def parse_line(self, line):
     tokens = line.split()
@@ -693,14 +688,13 @@ class Rule:
 
 class WrappedPacket:
 
-  def __init__(self, protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, host_name):
+  def __init__(self, protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging):
     self.protocol = protocol
     self.ext_IP_address = IPAddressField(ext_IP_address)
     self.ext_port = ExtPortField(ext_port)
     self.check_dns_rules = check_dns_rules
     self.domain_name = NameField(domain_name)
     self.check_for_http_logging = check_for_http_logging
-    self.host_name = NameField(host_name)
 
 class HTTPRule(Rule):
   def __init__(self, host_name):
@@ -857,6 +851,7 @@ class HttpTcpConnection:
     self.full_response_header_received = False
     self.isn_client = None
     self.isn_server = None
+    self.ext_IP_address = None
 
     #Fields to log
     self.host_name = None
@@ -870,7 +865,7 @@ class HttpTcpConnection:
   #Given a Pkt and the direction of the packet, we can analyze it to see the state of our HttpTcpConnection
   #Return True if we want to pass the packet, False if we should drop it since it is out of order
   def analyze(self, ip_section, transport_section, app_section, pkt_dir):
-    print "ANALYZE"
+    #print "ANALYZE"
     if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
       self.reset_http_data()
 
@@ -879,7 +874,8 @@ class HttpTcpConnection:
     is_fin_pkt = self.is_fin_pkt(transport_section)
 
     if pkt_dir == PKT_DIR_OUTGOING: # from client
-      print "NEW PACKET CLIENT"
+      #print "NEW PACKET CLIENT"
+      self.ext_IP_address = socket.inet_ntoa(ip_section[16:20])
 
       if is_syn_pkt:
         self.update_client_seq_no(transport_section)
@@ -903,23 +899,24 @@ class HttpTcpConnection:
           return False
 
     else: # from server
-      print "NEW PACKET SERVER"
+      #print "NEW PACKET SERVER"
+      self.ext_IP_address = socket.inet_ntoa(ip_section[12:16])
 
       if is_syn_pkt:
-        print "SYN"
+        #print "SYN"
         self.update_server_seq_no(transport_section)
 
       if is_ack_pkt:
         #Don't care about ACKS from server. No data to look at
-        print "ACK"
+        #print "ACK"
         pass
 
       if is_fin_pkt:
-        print "FIN"
+        #print "FIN"
         self.close_connection()
 
       if not is_syn_pkt and not is_fin_pkt:
-        print "DATA"
+        #print "DATA"
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
@@ -927,10 +924,10 @@ class HttpTcpConnection:
         elif self.is_server_resubmission(seqno):
           pass
         else:
-          print "DROPPED SERVER"
+          #print "DROPPED SERVER"
           return False
 
-    print "PASS"
+    #print "PASS"
     return True
 
   def is_syn_pkt(self, transport_section):
@@ -943,10 +940,16 @@ class HttpTcpConnection:
     return struct.unpack('!B', transport_section[13])[0] & 0x01
 
   def is_client_resubmission(self, seqno):
-    return (seqno < self.client_seqno and (self.client_seqno - seqno) < pow(2, 31)) or (seqno > self.client_seqno and (seqno - self.client_seqno) > pow(2, 31))
+    if self.client_seqno:
+      return (seqno < self.client_seqno and (self.client_seqno - seqno) < pow(2, 31)) or (seqno > self.client_seqno and (seqno - self.client_seqno) > pow(2, 31))
+    else:
+      return False
 
   def is_server_resubmission(self, seqno):
-    return (seqno < self.server_seqno and (self.server_seqno - seqno) < pow(2, 31)) or (seqno > self.server_seqno and (seqno - self.server_seqno) > pow(2, 31))
+    if self.server_seqno:
+      return (seqno < self.server_seqno and (self.server_seqno - seqno) < pow(2, 31)) or (seqno > self.server_seqno and (seqno - self.server_seqno) > pow(2, 31))
+    else:
+      return False
 
   def update_client_seq_no(self, transport_section):
     if self.state == HttpTcpConnection.INACTIVE:
@@ -995,10 +998,15 @@ class HttpTcpConnection:
       self.path = request_line[1]
       self.version = request_line[2]
 
+      found_host_name = False
       for line in lines:
         stripped_line = line.strip()
         if stripped_line.startswith("Host:"):
           self.host_name = stripped_line.split()[1]
+          found_host_name = True
+
+      if not found_host_name:
+        self.host_name = self.ext_IP_address
 
   def update_response_data(self, app_section):
     if self.state == HttpTcpConnection.SENDING_DATA:
@@ -1058,6 +1066,7 @@ class HttpTcpConnection:
       self.full_response_header_received = False
       self.isn_client = None
       self.isn_server = None
+      self.ext_IP_address = None
 
       self.host_name = None
       self.method = None
@@ -1067,6 +1076,13 @@ class HttpTcpConnection:
       self.object_size = None
       self.logged = False
     else:
+      """
+      Two Fin packets are sent when closing a connection, one from the client, one from the server
+      We set our connection state to inactive when we see the first fin which means the second fin
+      does nothing. I just put this here to silent the state machine error we see since its not much
+      an error and I don't want to deal with having a middle man state between active and inactive 
+      connections
+      """
       if self.state != HttpTcpConnection.INACTIVE:
         print "Closing connection when we are in State: %d" % self.state
 
@@ -1081,6 +1097,7 @@ class HttpTcpConnection:
       self.full_response_header_received = False
       self.isn_client = None
       self.isn_server = None
+      self.ext_IP_address = None
 
       self.host_name = None
       self.method = None
