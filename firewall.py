@@ -943,13 +943,17 @@ class HttpTcpConnection:
     if self.client_seqno:
       return (seqno < self.client_seqno and (self.client_seqno - seqno) < pow(2, 31)) or (seqno > self.client_seqno and (seqno - self.client_seqno) > pow(2, 31))
     else:
-      return False
+      #If we don't have a client_seqno, then TCP connection is not active now. Should probably send the packet and let
+      #Server handle this unexpected packet.
+      return True
 
   def is_server_resubmission(self, seqno):
     if self.server_seqno:
       return (seqno < self.server_seqno and (self.server_seqno - seqno) < pow(2, 31)) or (seqno > self.server_seqno and (seqno - self.server_seqno) > pow(2, 31))
     else:
-      return False
+      #If we don't have a client_seqno, then TCP connection is not active now. Should probably send the packet and let
+      #Computer handle this unexpected packet.
+      return True
 
   def update_client_seq_no(self, transport_section):
     if self.state == HttpTcpConnection.INACTIVE:
