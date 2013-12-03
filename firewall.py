@@ -1048,11 +1048,9 @@ class HttpTcpConnection:
   def attempt_to_parse_response(self):
     if self.http_response_data == "":
       return
-    result = re.match("(([\s\S]*?\r?\n)*?)\r?\n([\s\S]*?)", self.http_response_data)
-    if result:
+    lines = re.split("\r?\n", self.http_response_data)
+    if "" in lines:
       self.full_response_header_received = True
-      header = result.group(1)
-      lines = re.split("\r?\n", header)
       response_line = lines[0].split()
       self.status_code = response_line[1]
 
@@ -1065,8 +1063,19 @@ class HttpTcpConnection:
       if not found_content_length:
         self.object_size = -1
 
-      http_object = result.group(3)
-      self.response_content_length_so_far += len(http_object)
+      num_consecutive_new_lines = 0
+      for i, char in enumerate(self.http_response_data):
+        if char == "\r":
+          pass
+        elif char == "\n":
+          num_consecutive_new_lines++
+          if num_consecutive_new_lines == 2:
+            header_length = i + 1
+            break
+        else:
+          num_consecutive_new_lines = 0
+
+      self.response_content_length_so_far += len(self.http_response_data) - header_length
 
   def check_for_complete_response(self):
     #print (self.response_content_length_so_far, self.object_size)
