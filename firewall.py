@@ -26,6 +26,7 @@ class Firewall:
           "192.168.122.5": "to.denounce.the.evils.of.truth.and.love", "192.168.122.6": "to.extend.our.reach.to.the.stars.above", "192.168.122.7": "jessie", "192.168.122.8": "james", "192.168.122.9": "team.rocket.blast.off.at.the.speed.of.light", "192.168.122.10": "surrender.now.or.prepare.to.fight", "192.168.122.11": "meowth", "192.168.122.12": "thats.right", "192.168.122.122": "were.blasting.off.again"}
 
         #For HTTP Logging
+        self.log_file = open('http.log', 'a')
 
         #Used to store HTTP Requests/Responses building them up from possibly fragmented packets
         self.http_tcp_conns = dict()
@@ -38,6 +39,7 @@ class Firewall:
 
         parser = RulesParser(config['rule'])
         self.rules, self.http_rules = parser.parse_rules()
+        self.counter = 0
 
     def handle_timer(self):
         pass
@@ -236,12 +238,12 @@ class Firewall:
       if connection.full_request_header_received and connection.full_response_header_received and not connection.logged:
         connection.logged = True
         if self.match_http_rule(connection.host_name):
-          log_file = open('http.log', 'a')
           log_line = "%s %s %s %s %s %s\n" % (connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection.object_size)
-          print log_line
-          log_file.write(log_line)
-          log_file.flush()
-          log_file.close()
+          if int(connection.status_code) == 200:
+            self.counter = self.counter+1
+            print self.counter
+          self.log_file.write(log_line)
+          self.log_file.flush()
 
     def handle_deny_dns(self, domain_name, pkt):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
@@ -595,9 +597,9 @@ class RulesParser:
         rule = self.parse_line(line)
         if rule:
           if isinstance(rule, HTTPRule):
-          	http_rules.append(rule)
+            http_rules.append(rule)
           else:
-          	rules.append(rule)
+            rules.append(rule)
     return rules, http_rules
 
   def parse_line(self, line):
@@ -872,6 +874,9 @@ class HttpTcpConnection:
     is_syn_pkt = self.is_syn_pkt(transport_section)
     is_ack_pkt = self.is_ack_pkt(transport_section)
     is_fin_pkt = self.is_fin_pkt(transport_section)
+    is_rst_pkt = self.is_rst_pkt(transport_section)
+
+    print bool(is_syn_pkt), bool(is_ack_pkt), bool(is_fin_pkt), bool(is_rst_pkt)
 
     if pkt_dir == PKT_DIR_OUTGOING: # from client
       #print "NEW PACKET CLIENT"
@@ -887,7 +892,11 @@ class HttpTcpConnection:
       if is_fin_pkt:
         self.close_connection()
 
-      if not is_syn_pkt and not is_fin_pkt:
+      if is_rst_pkt:
+        self.reset_connection()
+
+      if not is_syn_pkt and not is_fin_pkt and not is_rst_pkt:
+        print "DATA"
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.client_seqno: #Is the expected Seqno
@@ -895,7 +904,8 @@ class HttpTcpConnection:
         elif self.is_client_resubmission(seqno):
           pass
         else:
-          #print "DROPPED CLIENT"
+          print "DROPPED CLIENT"
+          print
           return False
 
     else: # from server
@@ -915,8 +925,11 @@ class HttpTcpConnection:
         #print "FIN"
         self.close_connection()
 
-      if not is_syn_pkt and not is_fin_pkt:
-        #print "DATA"
+      if is_rst_pkt:
+        self.reset_connection()
+
+      if not is_syn_pkt and not is_fin_pkt and not is_rst_pkt:
+        print "DATA"
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
@@ -924,10 +937,12 @@ class HttpTcpConnection:
         elif self.is_server_resubmission(seqno):
           pass
         else:
-          #print "DROPPED SERVER"
+          print "DROPPED SERVER"
+          print
           return False
 
-    #print "PASS"
+    print "PASS"
+    print
     return True
 
   def is_syn_pkt(self, transport_section):
@@ -938,6 +953,9 @@ class HttpTcpConnection:
 
   def is_fin_pkt(self, transport_section):
     return struct.unpack('!B', transport_section[13])[0] & 0x01
+
+  def is_rst_pkt(self, transport_section):
+    return struct.unpack('!B', transport_section[13])[0] & 0x04
 
   def is_client_resubmission(self, seqno):
     if self.client_seqno:
@@ -1089,6 +1107,27 @@ class HttpTcpConnection:
       """
       if self.state != HttpTcpConnection.INACTIVE:
         print "Closing connection when we are in State: %d" % self.state
+
+  def reset_connection(self):
+    self.state = HttpTcpConnection.INACTIVE
+    self.http_request_data = ""
+    self.http_response_data = ""
+    self.client_seqno = None
+    self.server_seqno = None
+    self.response_content_length_so_far = 0
+    self.full_request_header_received = False
+    self.full_response_header_received = False
+    self.isn_client = None
+    self.isn_server = None
+    self.ext_IP_address = None
+
+    self.host_name = None
+    self.method = None
+    self.path = None
+    self.version = None
+    self.status_code = None
+    self.object_size = None
+    self.logged = False
 
   def reset_http_data(self):
     if self.state == HttpTcpConnection.DATA_DONE_SENDING:
