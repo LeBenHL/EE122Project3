@@ -896,7 +896,7 @@ class HttpTcpConnection:
         self.reset_connection()
 
       if not is_syn_pkt and not is_fin_pkt and not is_rst_pkt:
-        print "DATA"
+        #print "DATA"
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.client_seqno: #Is the expected Seqno
@@ -904,8 +904,8 @@ class HttpTcpConnection:
         elif self.is_client_resubmission(seqno):
           pass
         else:
-          print "DROPPED CLIENT"
-          print
+          #print "DROPPED CLIENT"
+          #print
           return False
 
     else: # from server
@@ -929,7 +929,7 @@ class HttpTcpConnection:
         self.reset_connection()
 
       if not is_syn_pkt and not is_fin_pkt and not is_rst_pkt:
-        print "DATA"
+        #print "DATA"
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
@@ -937,12 +937,12 @@ class HttpTcpConnection:
         elif self.is_server_resubmission(seqno):
           pass
         else:
-          print "DROPPED SERVER"
-          print
+          #print "DROPPED SERVER"
+          #print
           return False
 
-    print "PASS"
-    print
+    #print "PASS"
+    #print
     return True
 
   def is_syn_pkt(self, transport_section):
@@ -996,7 +996,7 @@ class HttpTcpConnection:
       print "Updating Server Seq No when we are in State: %d" % self.state
 
   def update_request_data(self, app_section):
-    print "update request"
+    #print "update request"
     if self.state == HttpTcpConnection.SERVER_SYN_ACK or self.state == HttpTcpConnection.SENDING_DATA:
       self.state = HttpTcpConnection.SENDING_DATA
       self.client_seqno = (self.client_seqno + len(app_section)) % HttpTcpConnection.MAX_32_BIT_INT
@@ -1033,7 +1033,7 @@ class HttpTcpConnection:
         self.host_name = self.ext_IP_address
 
   def update_response_data(self, app_section):
-    print "update response"
+    #print "update response"
     if self.state == HttpTcpConnection.SENDING_DATA:
       self.server_seqno = (self.server_seqno + len(app_section)) % HttpTcpConnection.MAX_32_BIT_INT
 
@@ -1049,7 +1049,7 @@ class HttpTcpConnection:
       print "Updating Response data when we are in State: %d" % self.state
 
   def attempt_to_parse_response(self):
-    print "PARSING RESPONSE"
+    #print "PARSING RESPONSE"
     if self.http_response_data == "":
       return
     lines = re.split("\r?\n", self.http_response_data)
@@ -1059,13 +1059,13 @@ class HttpTcpConnection:
       self.status_code = response_line[1]
 
       found_content_length = False
-      print "LINES!"
+      #print "LINES!"
       for line in lines:
         if line.strip().startswith("Content-Length:"):
           self.object_size = int(line.split()[1])
           found_content_length = True
           break
-      print "DONE LINES!"
+      #print "DONE LINES!"
 
       if not found_content_length:
         self.object_size = -1
