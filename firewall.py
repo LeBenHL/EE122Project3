@@ -996,6 +996,7 @@ class HttpTcpConnection:
       print "Updating Server Seq No when we are in State: %d" % self.state
 
   def update_request_data(self, app_section):
+    print "update request"
     if self.state == HttpTcpConnection.SERVER_SYN_ACK or self.state == HttpTcpConnection.SENDING_DATA:
       self.state = HttpTcpConnection.SENDING_DATA
       self.client_seqno = (self.client_seqno + len(app_section)) % HttpTcpConnection.MAX_32_BIT_INT
@@ -1026,11 +1027,13 @@ class HttpTcpConnection:
         if stripped_line.startswith("Host:"):
           self.host_name = stripped_line.split()[1]
           found_host_name = True
+          break
 
       if not found_host_name:
         self.host_name = self.ext_IP_address
 
   def update_response_data(self, app_section):
+    print "update response"
     if self.state == HttpTcpConnection.SENDING_DATA:
       self.server_seqno = (self.server_seqno + len(app_section)) % HttpTcpConnection.MAX_32_BIT_INT
 
@@ -1046,6 +1049,7 @@ class HttpTcpConnection:
       print "Updating Response data when we are in State: %d" % self.state
 
   def attempt_to_parse_response(self):
+    print "PARSING RESPONSE"
     if self.http_response_data == "":
       return
     lines = re.split("\r?\n", self.http_response_data)
@@ -1055,10 +1059,13 @@ class HttpTcpConnection:
       self.status_code = response_line[1]
 
       found_content_length = False
+      print "LINES!"
       for line in lines:
         if line.strip().startswith("Content-Length:"):
           self.object_size = int(line.split()[1])
           found_content_length = True
+          break
+      print "DONE LINES!"
 
       if not found_content_length:
         self.object_size = -1
@@ -1068,7 +1075,7 @@ class HttpTcpConnection:
         if char == "\r":
           pass
         elif char == "\n":
-          num_consecutive_new_lines++
+          num_consecutive_new_lines += 1
           if num_consecutive_new_lines == 2:
             header_length = i + 1
             break
