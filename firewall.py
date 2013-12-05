@@ -413,7 +413,7 @@ class Firewall:
         index += 2
 
       if bytes_left > 0:
-        summation += struck.unpack('!B', data[index:index+1])[0] << 8
+        summation += struct.unpack('!B', data[index:index+1])[0] << 8
 
       return summation
 
@@ -876,7 +876,7 @@ class HttpTcpConnection:
     is_fin_pkt = self.is_fin_pkt(transport_section)
     is_rst_pkt = self.is_rst_pkt(transport_section)
 
-    print bool(is_syn_pkt), bool(is_ack_pkt), bool(is_fin_pkt), bool(is_rst_pkt)
+    #print bool(is_syn_pkt), bool(is_ack_pkt), bool(is_fin_pkt), bool(is_rst_pkt)
 
     if pkt_dir == PKT_DIR_OUTGOING: # from client
       #print "NEW PACKET CLIENT"
@@ -1071,6 +1071,7 @@ class HttpTcpConnection:
         self.object_size = -1
 
       num_consecutive_new_lines = 0
+      header_length = None
       for i, char in enumerate(self.http_response_data):
         if char == "\r":
           pass
@@ -1082,7 +1083,8 @@ class HttpTcpConnection:
         else:
           num_consecutive_new_lines = 0
 
-      self.response_content_length_so_far += len(self.http_response_data) - header_length
+      if header_length:
+        self.response_content_length_so_far += len(self.http_response_data) - header_length
 
   def check_for_complete_response(self):
     #print (self.response_content_length_so_far, self.object_size)
