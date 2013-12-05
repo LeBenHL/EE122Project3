@@ -883,9 +883,6 @@ class HttpTcpConnection:
   #Return True if we want to pass the packet, False if we should drop it since it is out of order
   def analyze(self, ip_section, transport_section, app_section, pkt_dir):
     #print "ANALYZE"
-    if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
-      self.reset_http_data()
-
     is_syn_pkt = self.is_syn_pkt(transport_section)
     is_ack_pkt = self.is_ack_pkt(transport_section)
     is_fin_pkt = self.is_fin_pkt(transport_section)
@@ -915,6 +912,8 @@ class HttpTcpConnection:
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.client_seqno: #Is the expected Seqno
+          if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
+            self.reset_http_data()
           self.update_request_data(app_section)
         elif self.is_client_resubmission(seqno):
           pass
@@ -948,6 +947,8 @@ class HttpTcpConnection:
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
+          if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
+            self.reset_http_data()
           self.update_response_data(app_section)
         elif self.is_server_resubmission(seqno):
           pass
@@ -1041,7 +1042,7 @@ class HttpTcpConnection:
         stripped_line = line.strip()
         if stripped_line.startswith("Host:"):
           self.host_name = stripped_line.split()[1]
-          found_host_name = True
+          #found_host_name = True
           break
 
       if not found_host_name:
