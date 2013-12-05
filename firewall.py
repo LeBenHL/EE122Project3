@@ -57,6 +57,15 @@ class Firewall:
         else:
           try:
             protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, QTYPE = self.read_packet(pkt, pkt_dir)
+
+            #Check Protocol, if it is None, pass it and return right away
+            if protocol is None:
+              if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send_ip_packet(pkt)
+              else: # pkt_dir == PKT_DIR_OUTGOING
+                self.iface_ext.send_ip_packet(pkt)
+              return
+
             wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging)
 
             # verdict can be either 'pass', 'drop', 'deny'
@@ -435,7 +444,10 @@ class Firewall:
       VERSION_AND_HEADER_LENGTH = chr((4 << 4) + 5)
       TOS = chr(0)
       TOTAL_LENGTH = struct.pack('!H', len(payload) + 20)
-      IDENTIFICATION_TO_TTL = ip_section[4:9]
+      IDENTIFICATION = struct.pack('!H', 0x00)
+      FLAGS_AND_OFFSET = struct.pack('!H', 0x00)
+      TTL = chr(64)
+      IDENTIFICATION_TO_TTL = IDENTIFICATION + FLAGS_AND_OFFSET + TTL
 
       if protocol is None:
         PROTOCOL = ip_section[9]
@@ -871,9 +883,6 @@ class HttpTcpConnection:
   #Return True if we want to pass the packet, False if we should drop it since it is out of order
   def analyze(self, ip_section, transport_section, app_section, pkt_dir):
     #print "ANALYZE"
-    if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
-      self.reset_http_data()
-
     is_syn_pkt = self.is_syn_pkt(transport_section)
     is_ack_pkt = self.is_ack_pkt(transport_section)
     is_fin_pkt = self.is_fin_pkt(transport_section)
@@ -903,6 +912,8 @@ class HttpTcpConnection:
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.client_seqno: #Is the expected Seqno
+          if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
+            self.reset_http_data()
           self.update_request_data(app_section)
         elif self.is_client_resubmission(seqno):
           pass
@@ -936,6 +947,8 @@ class HttpTcpConnection:
         #Packet with our HTTP Data!
         seqno = struct.unpack('!L', transport_section[4:8])[0]
         if seqno == self.server_seqno: #Is the expected Seqno
+          if self.state ==  HttpTcpConnection.DATA_DONE_SENDING:
+            self.reset_http_data()
           self.update_response_data(app_section)
         elif self.is_server_resubmission(seqno):
           pass
@@ -1029,7 +1042,7 @@ class HttpTcpConnection:
         stripped_line = line.strip()
         if stripped_line.startswith("Host:"):
           self.host_name = stripped_line.split()[1]
-          found_host_name = True
+          #found_host_name = True
           break
 
       if not found_host_name:
