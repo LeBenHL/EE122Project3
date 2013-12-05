@@ -57,6 +57,15 @@ class Firewall:
         else:
           try:
             protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, QTYPE = self.read_packet(pkt, pkt_dir)
+
+            #Check Protocol, if it is None, pass it and return right away
+            if protocol is None:
+              if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send_ip_packet(pkt)
+              else: # pkt_dir == PKT_DIR_OUTGOING
+                self.iface_ext.send_ip_packet(pkt)
+              return
+
             wrapped_packet = WrappedPacket(protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging)
 
             # verdict can be either 'pass', 'drop', 'deny'
