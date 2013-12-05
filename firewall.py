@@ -435,7 +435,10 @@ class Firewall:
       VERSION_AND_HEADER_LENGTH = chr((4 << 4) + 5)
       TOS = chr(0)
       TOTAL_LENGTH = struct.pack('!H', len(payload) + 20)
-      IDENTIFICATION_TO_TTL = ip_section[4:9]
+      IDENTIFICATION = struct.pack('!H', 0x00)
+      FLAGS_AND_OFFSET = struct.pack('!H', 0x00)
+      TTL = chr(64)
+      IDENTIFICATION_TO_TTL = IDENTIFICATION + FLAGS_AND_OFFSET + TTL
 
       if protocol is None:
         PROTOCOL = ip_section[9]
