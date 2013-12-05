@@ -28,7 +28,8 @@ class Firewall:
         #For HTTP Logging
         self.log_file = open('http.log', 'a')
 
-        #Used to store HTTP Requests/Responses building them up from possibly fragmented packets
+        #Used to store HTTP Requests/Responses building them up from possibly fragmented packets by mapping a
+        #(ext_IP_address, internal_port) tuple to a HTTP TCP Connection
         self.http_tcp_conns = dict()
 
         try:
@@ -211,10 +212,11 @@ class Firewall:
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
       if pkt_dir == PKT_DIR_OUTGOING: # is a HTTP request
         internal_port = struct.unpack("!H", transport_section[0:2])[0]
-        if not self.http_tcp_conns.has_key(internal_port):
-          self.http_tcp_conns[internal_port] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
+        ext_IP_address = socket.inet_ntoa(ip_section[16:20])
+        if not self.http_tcp_conns.has_key((ext_IP_address, internal_port)):
+          self.http_tcp_conns[(ext_IP_address, internal_port)] = HttpTcpConnection(HttpTcpConnection.INACTIVE)
 
-        connection = self.http_tcp_conns[internal_port]
+        connection = self.http_tcp_conns[(ext_IP_address, internal_port)]
 
         if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
           self.iface_ext.send_ip_packet(pkt)
@@ -223,9 +225,10 @@ class Firewall:
         
       else: # is a HTTP response
         internal_port = struct.unpack("!H", transport_section[2:4])[0]
+        ext_IP_address = socket.inet_ntoa(ip_section[12:16])
 
-        if self.http_tcp_conns.has_key(internal_port):
-          connection = self.http_tcp_conns[internal_port]
+        if self.http_tcp_conns.has_key((ext_IP_address, internal_port)):
+          connection = self.http_tcp_conns[(ext_IP_address, internal_port)]
 
           if connection.analyze(ip_section, transport_section, app_section, pkt_dir):
             self.iface_int.send_ip_packet(pkt)
