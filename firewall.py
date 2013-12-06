@@ -1029,8 +1029,8 @@ class HttpTcpConnection:
   def attempt_to_parse_request(self):
     if self.http_request_data == "":
       return
-    lines = re.split("\r?\n", self.http_request_data)
-    if "" in lines:
+    if self.has_two_consecutive_newlines(self.http_request_data):
+      lines = re.split("\r?\n", self.http_request_data)
       self.full_request_header_received = True
       request_line = lines[0].split()
       self.method = request_line[0]
@@ -1042,7 +1042,7 @@ class HttpTcpConnection:
         stripped_line = line.strip()
         if stripped_line.startswith("Host:"):
           self.host_name = stripped_line.split()[1]
-          #found_host_name = True
+          found_host_name = True
           break
 
       if not found_host_name:
@@ -1068,8 +1068,8 @@ class HttpTcpConnection:
     #print "PARSING RESPONSE"
     if self.http_response_data == "":
       return
-    lines = re.split("\r?\n", self.http_response_data)
-    if "" in lines:
+    if self.has_two_consecutive_newlines(self.http_response_data):
+      lines = re.split("\r?\n", self.http_response_data)
       self.full_response_header_received = True
       response_line = lines[0].split()
       self.status_code = response_line[1]
@@ -1101,6 +1101,19 @@ class HttpTcpConnection:
 
       if header_length:
         self.response_content_length_so_far += len(self.http_response_data) - header_length
+
+  def has_two_consecutive_newlines(self, data):
+    num_consecutive_new_lines = 0
+    for char in data:
+      if char == "\r":
+        pass
+      elif char == "\n":
+        num_consecutive_new_lines += 1
+        if num_consecutive_new_lines == 2:
+          return True
+      else:
+        num_consecutive_new_lines = 0
+    return False
 
   def check_for_complete_response(self):
     #print (self.response_content_length_so_far, self.object_size)
