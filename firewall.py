@@ -40,7 +40,6 @@ class Firewall:
 
         parser = RulesParser(config['rule'])
         self.rules, self.http_rules = parser.parse_rules()
-        self.counter = 0
 
     def handle_timer(self):
         pass
@@ -114,7 +113,10 @@ class Firewall:
                 if protocol == "tcp":
                   self.handle_deny_tcp(pkt, pkt_dir)
                 else:
-                  self.handle_deny_dns(domain_name, pkt)
+                  if QTYPE == 28: # query type is AAAA, see clarifications
+                    return
+                  else: # QTYPE == 1 (query type is A)
+                    self.handle_deny_dns(domain_name, pkt)
               elif verdict == "drop":
                 #Do Nothing to just drop it
                 pass
@@ -202,6 +204,8 @@ class Firewall:
 
       return ".".join(ip_parts) 
 
+    # Only OUTGOING TCP SYN packets will be tested
+    # That is, the VM is always the client and the VM is always in SYN SENT state
     def handle_deny_tcp(self, pkt, pkt_dir):
       ip_section, transport_section, app_section = self.split_by_layers(pkt)
 
@@ -213,8 +217,9 @@ class Firewall:
       ip_header = self.generate_IP_header(ip_section, transport_header)
 
       if pkt_dir == PKT_DIR_INCOMING: # Packet came from EXT interface (source is outside world)
+        # We should never be in this clause since only outgoing TCP SYN packets will be tested
         self.iface_ext.send_ip_packet(ip_header + transport_header) # Send RST packet back to sender in outside world
-      else: # Packet came from INT interfance (source is myself)
+      else: # Packet came from INT interface (source is myself)
         self.iface_int.send_ip_packet(ip_header + transport_header) # Send RST packet back to sender
 
     def handle_log_http(self, pkt, pkt_dir):
@@ -251,9 +256,6 @@ class Firewall:
         connection.logged = True
         if self.match_http_rule(connection.host_name):
           log_line = "%s %s %s %s %s %s\n" % (connection.host_name, connection.method, connection.path, connection.version, connection.status_code, connection.object_size)
-          if int(connection.status_code) == 200:
-            self.counter = self.counter+1
-            print self.counter
           self.log_file.write(log_line)
           self.log_file.flush()
 
@@ -363,18 +365,11 @@ class Firewall:
       SOURCE_PORT = transport_section[2:4]
       DESTINATION_PORT = transport_section[0:2]
 
-      # Set sender seqno. to ack=client_isn+1 since all TCP packets sent from receiver
-      # have some sort of ack in them, where ack=client_isn+1
-      # since we are the ones initializing the connection
-      # Possibly bad logic?
-      #SEQUENCE_NUM_INT = struct.unpack('!L', transport_section[8:12])[0] + 1
-      #SEQUENCE_NUM = struct.pack('!L', SEQUENCE_NUM_INT)
-
       # Can be anything, since assume that sender is in SYN-SENT state
       # So if it receives a RST, it does not check sequence number field
       SEQUENCE_NUM = struct.pack('!L', 0x00000001)
 
-      # Check the header 'Reset Processing here':
+      # Check the header 'Reset Processing' here:
       # https://www.ietf.org/rfc/rfc793.txt
       # ACK_NUM = client_isn(source packet SEQNO field) + 1
       ACK_NUM_INT = struct.unpack('!L', transport_section[4:8])[0] + 1
@@ -485,7 +480,6 @@ class Firewall:
       elif protocol_tmp == 17:
         protocol = "udp"
       else:
-        #Not a Protocol we recognize, should we just drop?
         return (None, None, None, None, None, None, None)
 
       header_len_tmp = struct.unpack('!B',pkt[0])[0]
@@ -553,7 +547,7 @@ class Firewall:
           QCLASS = struct.unpack('!H',pkt[len_byte_index+2:len_byte_index+4])[0]
           if (QTYPE == 1 or QTYPE == 28) and QCLASS == 1:
             check_dns_rules = True
-      # Need to make sure to change the other return (None, None, None, None, None, None, None, None) to have the same # of elements
+      # Need to make sure to change the other return (None, None, None, None, None, None, None) to have the same # of elements
       return protocol, ext_IP_address, ext_port, check_dns_rules, domain_name, check_for_http_logging, QTYPE
 
     # Given a list
